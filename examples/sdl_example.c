@@ -1,17 +1,18 @@
 #include <stdio.h>
 #include <SDL3/SDL.h>
-#include "shadercross.h"
-#include "shadercross.c"
+#include "cm_shader.h"
+#include "cm_shader.c"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-int main(int argc, char const *argv[])
-{
-    SDL_Init(SDL_INIT_VIDEO);
-    SDL_GPUDevice *device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, 0, NULL);
-
+int main(int argc, char const *argv[]) {
+    /* compile shader */
     SC_Result sc;
     sc_compile("triangle.shader", SC_OUTPUT_FORMAT_SDL, &sc);
+
+    /* SDL initialization */
+    SDL_Init(SDL_INIT_VIDEO);
+    SDL_GPUDevice *device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, 0, NULL);
 
     /* SDL shader creation */
     SDL_GPUShaderCreateInfo vsinfo, fsinfo;
@@ -27,7 +28,7 @@ int main(int argc, char const *argv[])
     pinfo.fragment_shader = fshader;
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
 
-    /* create texture */
+    /* SDL texture creation */
     SDL_GPUTextureCreateInfo tinfo = {0};
     tinfo.type = SDL_GPU_TEXTURETYPE_2D;
     tinfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -38,10 +39,8 @@ int main(int argc, char const *argv[])
     tinfo.num_levels = 1;
     SDL_GPUTexture *texture = SDL_CreateGPUTexture(device, &tinfo);
 
-    /* begin command recording */
+    /* render to texture*/
     SDL_GPUCommandBuffer *command_buffer = SDL_AcquireGPUCommandBuffer(device);
-
-    /* render to texture */
     SDL_GPUColorTargetInfo color_target_info = {0};
     color_target_info.texture = texture;
     color_target_info.mip_level = 0;
@@ -65,7 +64,7 @@ int main(int argc, char const *argv[])
     SDL_DownloadFromGPUTexture(copy_pass, &region, &destination);
     SDL_EndGPUCopyPass(copy_pass);
 
-    /* finish command recording */
+    /* finish render */
     SDL_SubmitGPUCommandBuffer(command_buffer);
     SDL_WaitForGPUIdle(device);
 

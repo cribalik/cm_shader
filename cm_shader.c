@@ -1,9 +1,4 @@
-/*
-* NOTE(chris): If we want to compile to DirectX, we can use SDL_ShaderCross, which can be found here:
-* https://nightly.link/libsdl-org/SDL_shadercross/workflows/main/main?preview
-*/
-
-#include "shadercross.h"
+#include "cm_shader.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -116,9 +111,9 @@ char* sc__strcat(SC_Arena *arena, ...) {
     return result;
 }
 
-char* sc__consume_indentifier(SC_Parser *p) {
+char* sc__consume_identifier(SC_Parser *p) {
     char *s = p->s;
-    while (isspace(*s)) if (*s++ == '\n') ++s;
+    while (isspace(*s)) ++s;
     char *start = s;
     while (isalnum(*s) || *s == '_') ++s;
     char *end = s;
@@ -128,9 +123,61 @@ char* sc__consume_indentifier(SC_Parser *p) {
     return sc__strcpy(p->arena, start, end);
 }
 
+int sc__parse_f64(const char *str, double *result) {
+    const char *s = str;
+    double res = 0;
+    int neg = 0;
+    if (*s == '-') neg = 1, ++s;
+    else if (*s == '+') ++s;
+    if (!isdigit(*s)) return 0;
+    for (; isdigit(*s); ++s)
+        res *= 10, res += *s - '0';
+    double mul = 0.1;
+    if (*s == '.')
+        for (++s; isdigit(*s); ++s)
+            res += mul * (*s - '0'), mul *= 0.1;
+    *result = neg ? -res : res;
+    return (int)(s - str);
+}
+
+int sc__parse_int(const char *str, long long *result) {
+    long long res = 0;
+    const char *s = str;
+    long long neg = 1;
+    if (*s == '-') neg = -1, ++s;
+    else if (*s == '+') neg = 1, ++s;
+    if (!isdigit(*s)) return 0;
+    while (isdigit(*s)) res *= 10, res += *s - '0', ++s;
+    *result = res * neg;
+    return 1;
+}
+
+SC_Bool sc__consume_float(SC_Parser *p, float *result) {
+    char *s = p->s;
+    while (isspace(*s)) ++s;
+    double d;
+    int len = sc__parse_f64(s, &d);
+    if (!len) return 0;
+    *result = (float)d;
+    p->s = s + len;
+    return 1;
+}
+
+SC_Bool sc__consume_integer(SC_Parser *p, int *result) {
+    char *s = p->s;
+    while (isspace(*s)) ++s;
+    long long i;
+    int len = sc__parse_int(s, &i);
+    if (!len) return 0;
+    *result = (int)i;
+    p->s = s + len;
+    return 1;
+}
+
 void sc__consume_whitespace(SC_Parser *p) {
     char *s = p->s;
-    while (isspace(*s)) if (*s++ == '\n') ++s;
+    while (isspace(*s)) ++s;
+    p->s = s;
 }
 
 typedef struct SC_Writer {
@@ -162,7 +209,7 @@ void sc__write(SC_Writer *w, const char *fmt, ...) {
     w->len += len;
 }
 
-void sc__errlog(const char *fmt, size_t pos, SC_Parser *p, ...) {
+void sc__errlog(size_t pos, SC_Parser *p, const char *fmt, ...) {
     /* calculate line number */
     int line_number = 0;
     char *line = p->data;
@@ -171,7 +218,7 @@ void sc__errlog(const char *fmt, size_t pos, SC_Parser *p, ...) {
     fprintf(stderr, "Error %i: ", line_number);
 
     va_list args;
-    va_start(args, p);
+    va_start(args, fmt);
     vfprintf(stderr, fmt, args);
     va_end(args);
 
@@ -179,8 +226,8 @@ void sc__errlog(const char *fmt, size_t pos, SC_Parser *p, ...) {
     while (line[line_len] && line[line_len] != '\n' && line[line_len] != '\r') ++line_len;
     fprintf(stderr, "\n\n%.*s\n", line_len, line);
 }
-#define SC_ERROR(pos, msg, ...) do{sc__errlog(msg, pos, &p, ##__VA_ARGS__); goto error;} while(0)
-#define SC_PARSE_ERROR(msg, ...) do{sc__errlog(msg, p.s - p.data, &p, ##__VA_ARGS__); goto error;} while(0)
+#define SC_ERROR(pos, parser, ...) do{sc__errlog(pos, parser, __VA_ARGS__); goto error;} while(0)
+#define SC_PARSE_ERROR(...) SC_ERROR(p.s-p.data, &p, __VA_ARGS__)
 
 char* sc__read_file(SC_Arena *a, const char *path, int *len_out) {
     FILE *file = fopen(path, "rb");
@@ -215,6 +262,31 @@ char* sc__read_file(SC_Arena *a, const char *path, int *len_out) {
 
 static const char sc__texture_format_options[] = "r8, rg8, rgba8, r16, rg16, rgba16, r16f, rg16f, rgba16f, r32f, rg32f, rgba32f, r11g11b10f";
 static const char sc__depth_format_options[] = "d16, d24, d32f, d24_s8, d32f_s8";
+
+SC_Bool sc__consume_blend(SC_Parser *p, int *blend_code_location, SC_BlendFactor *blend_src, SC_BlendFactor *blend_dst, SC_BlendOp *blend_op) {
+    *blend_code_location = (int)(p->s - p->data);
+
+    if (sc__consume(p, "default")) {
+        *blend_src = SC_BLEND_FACTOR_SRC_ALPHA;
+        *blend_dst = SC_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        *blend_op = SC_BLEND_OP_ADD;
+    } else if (sc__consume(p, "off")) {
+        *blend_src = 0;
+        *blend_dst = 0;
+        *blend_op = 0;
+    } else {
+        *blend_src = sc__consume_blend_factor(p);
+        *blend_dst = sc__consume_blend_factor(p);
+        *blend_op = sc__consume_blend_op(p);
+        if (!*blend_src) SC_ERROR(*blend_code_location, p, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
+        if (!*blend_dst) SC_ERROR(*blend_code_location, p, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
+        if (!*blend_op) SC_ERROR(*blend_code_location, p, "Invalid source blend operation. Options are: add, subtract, rev_subtract, min, max");
+    }
+    return 1;
+
+    error:
+    return 0;
+}
 
 SC_TextureFormat sc__consume_texture_format(SC_Parser *p) {
     if (sc__consume(p, "r8")) return SC_TEXTURE_FORMAT_R8;
@@ -402,6 +474,11 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
     typedef struct SC_AstFragImage     {SC_Ast base;} SC_AstFragImage;
     typedef struct SC_AstFragUniform   {SC_Ast base;} SC_AstFragUniform;
 
+    int curr_blend_code_location = 0;
+    SC_BlendFactor curr_blend_src = 0;
+    SC_BlendFactor curr_blend_dst = 0;
+    SC_BlendOp curr_blend_op = 0;
+
     SC_Ast *ast_root = 0;
     SC_Ast **ast = &ast_root;
     #define SC_AST_PUSH(_type, ...) do { \
@@ -450,8 +527,13 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             code_len += contents_len;
             code_end = new_code + code_len;
             code = new_code;
-            last_pos = p.s;
-            continue;
+            goto next_token;
+        }
+
+        if (SC_CONSUME("@blend")) {
+            if (!sc__consume_blend(&p, &curr_blend_code_location, &curr_blend_src, &curr_blend_dst, &curr_blend_op))
+                goto error;
+            goto next_token;
         }
 
         switch (state) {
@@ -459,26 +541,6 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
 
             if (SC_CONSUME("@vert")) {
                 state = VERT;
-            }
-            else if (SC_CONSUME("@blend")) {
-                result->blend_code_location = (int)(p.s - p.data);
-
-                if (SC_CONSUME("default")) {
-                    result->blend_src = SC_BLEND_FACTOR_SRC_ALPHA;
-                    result->blend_dst = SC_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                    result->blend_op = SC_BLEND_OP_ADD;
-                } else if (SC_CONSUME("off")) {
-                    result->blend_src = 0;
-                    result->blend_dst = 0;
-                    result->blend_op = 0;
-                } else {
-                    result->blend_src = sc__consume_blend_factor(&p);
-                    result->blend_dst = sc__consume_blend_factor(&p);
-                    result->blend_op = sc__consume_blend_op(&p);
-                    if (!result->blend_src) SC_PARSE_ERROR("Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_constant_alpha, one_minus_constant_alpha, src_alpha_saturate");
-                    if (!result->blend_dst) SC_PARSE_ERROR("Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_constant_alpha, one_minus_constant_alpha, src_alpha_saturate");
-                    if (!result->blend_op) SC_PARSE_ERROR("Invalid source blend operation. Options are: add, subtract, rev_subtract, min, max");
-                }
             }
             else if (SC_CONSUME("@depth")) {
                 result->depth_code_location = (int)(p.s - p.data);
@@ -514,6 +576,12 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 result->cull_mode = sc__consume_cull_mode(&p);
                 if (!result->cull_mode) SC_PARSE_ERROR("Invalid cull mode value. Options are: none, front, back");
             }
+            else if (SC_CONSUME("@multisample")) {
+                int ms;
+                if (!sc__consume_integer(&p, &ms)) SC_PARSE_ERROR("Expected number of samples.\nExample:\n@multisample 4");
+                if (ms != 1 && ms != 2 && ms != 4 && ms != 8) SC_PARSE_ERROR("Invalid multisampling count. Supported values are 1,2,4,8");
+                result->multisample_count = ms;
+            }
             else {
                 SC_PARSE_ERROR("Expected @vert to start vertex shader");
             }
@@ -537,7 +605,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                         }
                         else if (SC_CONSUME("type")) {
                             if (!SC_CONSUME("=")) SC_PARSE_ERROR("Expected '=' after 'type'. Example: @in(type=u8) vec4 color;");
-                            if (!(attr.component_type = sc__consume_indentifier(&p))) SC_PARSE_ERROR("Expected component type. Example: @in(type=u8) vec4 color;");
+                            if (!(attr.component_type = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected component type. Example: @in(type=u8) vec4 color;");
                         }
                         else if (SC_CONSUME("instanced")) {
                             attr.instanced = 1;
@@ -547,8 +615,8 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
 
                 attr.is_flat = SC_CONSUME("flat");
 
-                if (!(attr.data_type = sc__consume_indentifier(&p))) SC_PARSE_ERROR("Expected vertex attribute data type");
-                if (!(attr.name = sc__consume_indentifier(&p))) SC_PARSE_ERROR("Expected vertex attribute name");
+                if (!(attr.data_type = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected vertex attribute data type");
+                if (!(attr.name = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected vertex attribute name");
 
                 /* determine format of data */
                 /* 1-component */
@@ -663,6 +731,10 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                         }
                     }
                 }
+                output.blend_code_location = curr_blend_code_location;
+                output.blend_src = curr_blend_src;
+                output.blend_dst = curr_blend_dst;
+                output.blend_op = curr_blend_op;
                 SC_AST_PUSH(SC_AstFragOut, output);
             }
             else if (SC_CONSUME("@sampler")) {
@@ -686,7 +758,9 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
         }
 
+        next_token:;
         last_pos = p.s;
+        continue;
     }
 
     /* count number of stuff */
@@ -744,7 +818,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 buffer->instanced = in->instanced;
             }
             else if (buffer->instanced != in->instanced)
-                SC_ERROR(in->code_location, "All attributes for buffer %i must be specified as instanced");
+                SC_ERROR(in->code_location, &p, "All attributes for buffer %i must be specified as instanced");
         }
     }
 
@@ -1004,6 +1078,18 @@ static const SDL_GPUBlendOp sc_to_sdl_blend_op[] = {
     SDL_GPU_BLENDOP_MAX, /* SC_BLEND_OP_MAX */
 };
 
+static const SDL_GPUSampleCount sc_to_sdl_sample_count[] = {
+    SDL_GPU_SAMPLECOUNT_1, /* 0 */
+    SDL_GPU_SAMPLECOUNT_1, /* 1 */
+    SDL_GPU_SAMPLECOUNT_2, /* 2 */
+    SDL_GPU_SAMPLECOUNT_1, /* 3 */
+    SDL_GPU_SAMPLECOUNT_4, /* 4 */
+    SDL_GPU_SAMPLECOUNT_1, /* 5 */
+    SDL_GPU_SAMPLECOUNT_1, /* 6 */
+    SDL_GPU_SAMPLECOUNT_1, /* 7 */
+    SDL_GPU_SAMPLECOUNT_8, /* 8 */
+};
+
 void sc_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, SC_Result *compiled) {
     memset(info, 0, sizeof(*info));
     info->code = (Uint8*)compiled->spirv_vertex_code;
@@ -1070,6 +1156,10 @@ void sc_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, SC_Result 
     rast_info->cull_mode = sc_to_sdl_cull_mode[sc->cull_mode];
     rast_info->enable_depth_clip = sc->depth_clip;
 
+    /* multisampling */
+    SDL_GPUMultisampleState *ms_info = &info->multisample_state;
+    ms_info->sample_count = sc_to_sdl_sample_count[sc->multisample_count];
+
     /* depth stencil */
     SDL_GPUDepthStencilState *ds_info = &info->depth_stencil_state;
     ds_info->compare_op = sc_to_sdl_compare_op[sc->depth_cmp];
@@ -1087,13 +1177,13 @@ void sc_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, SC_Result 
             desc->format = sc_to_sdl_texture_format[out->format];
 
             SDL_GPUColorTargetBlendState *blend = &desc->blend_state;
-            blend->src_color_blendfactor = sc_to_sdl_blend_factor[sc->blend_src];
-            blend->dst_color_blendfactor = sc_to_sdl_blend_factor[sc->blend_dst];
-            blend->color_blend_op = sc_to_sdl_blend_op[sc->blend_op];
-            blend->src_alpha_blendfactor = sc_to_sdl_blend_factor[sc->blend_src];
-            blend->dst_alpha_blendfactor = sc_to_sdl_blend_factor[sc->blend_dst];
-            blend->alpha_blend_op = sc_to_sdl_blend_op[sc->blend_op];
-            blend->enable_blend = sc->blend_op != SC_BLEND_OP_INVALID;
+            blend->src_color_blendfactor = sc_to_sdl_blend_factor[out->blend_src];
+            blend->dst_color_blendfactor = sc_to_sdl_blend_factor[out->blend_dst];
+            blend->color_blend_op = sc_to_sdl_blend_op[out->blend_op];
+            blend->src_alpha_blendfactor = sc_to_sdl_blend_factor[out->blend_src];
+            blend->dst_alpha_blendfactor = sc_to_sdl_blend_factor[out->blend_dst];
+            blend->alpha_blend_op = sc_to_sdl_blend_op[out->blend_op];
+            blend->enable_blend = out->blend_op != SC_BLEND_OP_INVALID;
         }
         target_info->color_target_descriptions = color_target_descriptions;
     }

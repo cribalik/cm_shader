@@ -10,6 +10,6 @@ void main() {
 @frag
 @out(format=rgba8) vec4 color_out;
 void main() {
-    color_out = vec4(color, 1);
+    color_out = vec4(color, 0.1);
 }
 @end

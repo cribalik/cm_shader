@@ -1,9 +1,9 @@
-#ifndef CM_SHADERCROSS_H
-#define CM_SHADERCROSS_H
+#ifndef CM_SHADER_H
+#define CM_SHADER_H
 
 /*
 
-Cm Shadercross - A simple shader compiler for SDL
+cm_shader - Super-powered GLSL with SDL3 integration
 =================================================
 
 You write your shaders in a GLSL-style language, it can transpile it to SPIRV, and can fill the SDL creation structs for you.
@@ -212,6 +212,12 @@ typedef struct SC_VertexInput {
 typedef struct SC_FragmentOutput {
     int code_location;
     SC_TextureFormat format;
+
+    /* blending */
+    int blend_code_location;
+    SC_BlendFactor blend_src;
+    SC_BlendFactor blend_dst;
+    SC_BlendOp blend_op;
 } SC_FragmentOutput;
 
 typedef struct SC_VertexInputBuffer {
@@ -249,12 +255,6 @@ typedef struct SC_Result {
     int num_fragment_buffers;
     int num_fragment_uniforms;
 
-    /* blending */
-    int blend_code_location;
-    SC_BlendFactor blend_src;
-    SC_BlendFactor blend_dst;
-    SC_BlendOp blend_op;
-
     /* depth */
     int depth_code_location;
     SC_Bool depth_write;
@@ -265,6 +265,9 @@ typedef struct SC_Result {
     /* culling */
     int cull_code_location;
     SC_CullMode cull_mode;
+
+    /* multisampling. Valid values are 1,2,4,8 */
+    int multisample_count;
 
     /* private stuff */
     void *arena;
@@ -295,4 +298,4 @@ void sc_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, SC_Result *sc
 void sc_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, SC_Result *sc);
 #endif
 
-#endif /* CM_SHADERCROSS_H */
+#endif /* CM_SHADER_H */
