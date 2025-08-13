@@ -2,8 +2,15 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdint.h>
+
+/* we use glslang to cross-compile from GLSL to SPIRV */
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
+
+#pragma comment(lib, "glslang-default-resource-limits.lib")
+#pragma comment(lib, "glslang.lib")
+#pragma comment(lib, "SPIRV-Tools-opt.lib")
+#pragma comment(lib, "SPIRV-Tools.lib")
 
 #ifdef _WIN32
     #define SC_ALLOCA(type, count) ((type*)memset(_alloca(sizeof(type) * (count)), 0, sizeof(type) * (count)))
@@ -437,7 +444,6 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
     enum {START, VERT, MID, FRAG, END} state = START;
 
     SC_Parser p = {code, code, &arena};
-    #define SC_CONSUME(str) sc__consume(&p, str)
 
     /* AST definitions */
     enum {
@@ -501,12 +507,12 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         else
             SC_AST_PUSH(SC_AstText, (int)(last_pos - p.data), (int)(p.s - p.data));
 
-        if (SC_CONSUME("@import")) {
-            if (!SC_CONSUME("\"")) SC_PARSE_ERROR("Expected file to import");
+        if (sc__consume(&p, "@import")) {
+            if (!sc__consume(&p, "\"")) SC_PARSE_ERROR("Expected file to import");
             char *import_start = p.s;
             while (*p.s && *p.s != '"') ++p.s;
             char *import_end = p.s;
-            if (!SC_CONSUME("\"")) SC_PARSE_ERROR("No end to import file path");
+            if (!sc__consume(&p, "\"")) SC_PARSE_ERROR("No end to import file path");
 
             /* find file */
             const char *dir_start = path;
@@ -530,7 +536,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             goto next_token;
         }
 
-        if (SC_CONSUME("@blend")) {
+        if (sc__consume(&p, "@blend")) {
             if (!sc__consume_blend(&p, &curr_blend_code_location, &curr_blend_src, &curr_blend_dst, &curr_blend_op))
                 goto error;
             goto next_token;
@@ -539,13 +545,13 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         switch (state) {
         case START:
 
-            if (SC_CONSUME("@vert")) {
+            if (sc__consume(&p, "@vert")) {
                 state = VERT;
             }
-            else if (SC_CONSUME("@depth")) {
+            else if (sc__consume(&p, "@depth")) {
                 result->depth_code_location = (int)(p.s - p.data);
                 /* compare op */
-                if (SC_CONSUME("default")) {
+                if (sc__consume(&p, "default")) {
                     result->depth_cmp = SC_COMPARE_OP_LESS;
                 } else {
                     result->depth_cmp = sc__consume_compare_op(&p);
@@ -553,9 +559,9 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 }
 
                 /* read/write */
-                if (SC_CONSUME("write"))
+                if (sc__consume(&p, "write"))
                     result->depth_write = 1;
-                else if (SC_CONSUME("read"))
+                else if (sc__consume(&p, "read"))
                     result->depth_write = 0;
                 else
                     SC_PARSE_ERROR("Expected depth read/write flag. Options are: read, write");
@@ -564,19 +570,19 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 if (!result->depth_format) SC_PARSE_ERROR("Expected depth format after read/write. Valid formats are: %s", sc__depth_format_options);
 
                 /* clip/clamp */
-                if (SC_CONSUME("clip"))
+                if (sc__consume(&p, "clip"))
                     result->depth_clip = 1;
-                else if (SC_CONSUME("clamp"))
+                else if (sc__consume(&p, "clamp"))
                     result->depth_clip = 0;
                 else
                     SC_PARSE_ERROR("Invalid depth format. Options are: clamp, clip");
             }
-            else if (SC_CONSUME("@cull")) {
+            else if (sc__consume(&p, "@cull")) {
                 result->cull_code_location = (int)(p.s - p.data);
                 result->cull_mode = sc__consume_cull_mode(&p);
                 if (!result->cull_mode) SC_PARSE_ERROR("Invalid cull mode value. Options are: none, front, back");
             }
-            else if (SC_CONSUME("@multisample")) {
+            else if (sc__consume(&p, "@multisample")) {
                 int ms;
                 if (!sc__consume_integer(&p, &ms)) SC_PARSE_ERROR("Expected number of samples.\nExample:\n@multisample 4");
                 if (ms != 1 && ms != 2 && ms != 4 && ms != 8) SC_PARSE_ERROR("Invalid multisampling count. Supported values are 1,2,4,8");
@@ -588,32 +594,32 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
 
         case VERT:
-            if (SC_CONSUME("@in")) {
+            if (sc__consume(&p, "@in")) {
                 SC_VertexInput attr = {0};
                 attr.code_location = (int)(p.s - p.data);
-                if (SC_CONSUME("(")) {
+                if (sc__consume(&p, "(")) {
                     while (1) {
-                        if (SC_CONSUME(",")) continue;
-                        else if (SC_CONSUME(")")) break;
-                        else if (SC_CONSUME("buffer")) {
-                            if (!SC_CONSUME("=")) SC_PARSE_ERROR("Expected '=' after 'buffer'. Example: @in(buffer=1) vec4 color;");
+                        if (sc__consume(&p, ",")) continue;
+                        else if (sc__consume(&p, ")")) break;
+                        else if (sc__consume(&p, "buffer")) {
+                            if (!sc__consume(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'buffer'. Example: @in(buffer=1) vec4 color;");
                             sc__consume_whitespace(&p);
                             if (!isdigit(*p.s)) SC_PARSE_ERROR("Expected buffer number. Example: @in(buffer=1) vec4 color;");
                             attr.buffer_slot = 0;
                             while (isdigit(*p.s))
                                 attr.buffer_slot *= 10, attr.buffer_slot += *p.s - '0', ++p.s;
                         }
-                        else if (SC_CONSUME("type")) {
-                            if (!SC_CONSUME("=")) SC_PARSE_ERROR("Expected '=' after 'type'. Example: @in(type=u8) vec4 color;");
+                        else if (sc__consume(&p, "type")) {
+                            if (!sc__consume(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'type'. Example: @in(type=u8) vec4 color;");
                             if (!(attr.component_type = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected component type. Example: @in(type=u8) vec4 color;");
                         }
-                        else if (SC_CONSUME("instanced")) {
+                        else if (sc__consume(&p, "instanced")) {
                             attr.instanced = 1;
                         }
                     }
                 }
 
-                attr.is_flat = SC_CONSUME("flat");
+                attr.is_flat = sc__consume(&p, "flat");
 
                 if (!(attr.data_type = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected vertex attribute data type");
                 if (!(attr.name = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected vertex attribute name");
@@ -683,24 +689,24 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
 
                 SC_AST_PUSH(SC_AstVertIn, attr);
             }
-            else if (SC_CONSUME("@sampler")) {
+            else if (sc__consume(&p, "@sampler")) {
                 SC_AST_PUSH(SC_AstVertSampler);
             }
-            else if (SC_CONSUME("@image")) {
+            else if (sc__consume(&p, "@image")) {
                 SC_AST_PUSH(SC_AstVertImage);
             }
-            else if (SC_CONSUME("@buffer")) {
-                SC_Bool readonly = SC_CONSUME("readonly");
+            else if (sc__consume(&p, "@buffer")) {
+                SC_Bool readonly = sc__consume(&p, "readonly");
                 SC_AST_PUSH(SC_AstVertBuffer, readonly);
             }
-            else if (SC_CONSUME("@uniform")) {
+            else if (sc__consume(&p, "@uniform")) {
                 SC_AST_PUSH(SC_AstVertUniform);
             }
-            else if (SC_CONSUME("@out")) {
+            else if (sc__consume(&p, "@out")) {
                 SC_AST_PUSH(SC_AstVertOut);
                 while (*p.s && *p.s != ';') ++p.s;
             }
-            else if (SC_CONSUME("@end")) {
+            else if (sc__consume(&p, "@end")) {
                 state = MID;
             }
             else
@@ -708,7 +714,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
 
         case MID:
-            if (!SC_CONSUME("@frag")) SC_PARSE_ERROR("Expected @frag to start fragment shader (or end of file to omit fragment shader)");
+            if (!sc__consume(&p, "@frag")) SC_PARSE_ERROR("Expected @frag to start fragment shader (or end of file to omit fragment shader)");
             result->has_fragment_shader = 1;
             state = FRAG;
             break;
@@ -718,15 +724,15 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
 
         case FRAG:
-            if (SC_CONSUME("@out")) {
+            if (sc__consume(&p, "@out")) {
                 SC_FragmentOutput output = {0};
                 output.code_location = (int)(p.s - p.data);
-                if (SC_CONSUME("(")) {
+                if (sc__consume(&p, "(")) {
                     while (1) {
-                        if (SC_CONSUME(",")) continue;
-                        else if (SC_CONSUME(")")) break;
-                        else if (SC_CONSUME("format")) {
-                            if (!SC_CONSUME("=")) SC_PARSE_ERROR("Expected '=' after 'format'. Example: @out(format=u8) vec4 color;");
+                        if (sc__consume(&p, ",")) continue;
+                        else if (sc__consume(&p, ")")) break;
+                        else if (sc__consume(&p, "format")) {
+                            if (!sc__consume(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'format'. Example: @out(format=u8) vec4 color;");
                             if (!(output.format = sc__consume_texture_format(&p))) SC_PARSE_ERROR("Expected data format. Example: @out(format=rgba8) vec4 color; Valid formats are: %s", sc__texture_format_options);
                         }
                     }
@@ -737,20 +743,20 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 output.blend_op = curr_blend_op;
                 SC_AST_PUSH(SC_AstFragOut, output);
             }
-            else if (SC_CONSUME("@sampler")) {
+            else if (sc__consume(&p, "@sampler")) {
                 SC_AST_PUSH(SC_AstFragSampler);
             }
-            else if (SC_CONSUME("@image")) {
+            else if (sc__consume(&p, "@image")) {
                 SC_AST_PUSH(SC_AstFragImage);
             }
-            else if (SC_CONSUME("@buffer")) {
-                SC_Bool readonly = SC_CONSUME("readonly");
+            else if (sc__consume(&p, "@buffer")) {
+                SC_Bool readonly = sc__consume(&p, "readonly");
                 SC_AST_PUSH(SC_AstFragBuffer, readonly);
             }
-            else if (SC_CONSUME("@uniform")) {
+            else if (sc__consume(&p, "@uniform")) {
                 SC_AST_PUSH(SC_AstFragUniform);
             }
-            else if (SC_CONSUME("@end")) {
+            else if (sc__consume(&p, "@end")) {
                 state = END;
             }
             else
@@ -965,7 +971,6 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         return 0;
     }
 
-    #undef SC_CONSUME
     #undef SC_ERROR
     #undef SC_PARSE_ERROR
 }

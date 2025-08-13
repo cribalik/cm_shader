@@ -1,1 +1,1 @@
-cl -I%VULKAN_SDK%\Include -I. -I.. sdl_example.c -Fesdl_example.exe -MD -link -libpath:%VULKAN_SDK%\Lib -libpath:. vulkan-1.lib SDL3.lib glslang-default-resource-limits.lib glslang.lib MachineIndependent.lib OSDependent.lib SPIRV-Tools-opt.lib SPIRV-Tools.lib SPIRV.lib SPVRemapper.lib
+cl -I%VULKAN_SDK%\Include -I. -I.. sdl_example.c -Fesdl_example.exe -MD -link -libpath:%VULKAN_SDK%\Lib -libpath:. SDL3.lib
