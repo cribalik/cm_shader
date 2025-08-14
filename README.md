@@ -5,7 +5,10 @@
 - Handle setting `set` and `binding` indices for you
 - Supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs
 
+# Example
+
 ```glsl
+/* triangle.shader */
 @blend src_alpha one_minus_src_alpha add
 @cull front
 
@@ -29,9 +32,8 @@
 @end
 ```
 
-# C/C++ usage with SDL3
-
 ```c++
+/* your C/C++ code */
 #include <SDL3/SDL.h>
 #include "cm_shader.h"
 
@@ -61,14 +63,27 @@ void func() {
 #include "cm_shader.c"
 ```
 
+Full example under `examples/sdl_example.c`
+
+# State of project
+
+**NOTE:**
+Currently you have to compile the shaders at runtime or manually serialize the compilation result to object to precompile shaders.
+Very soon there will be an API to serialize the compilation result into either binary or C code so that you can precompile the shaders at build time and only have to load bytes at runtime.
+
+- [x] Support Windows
+- [ ] Support Linux
+- [ ] Support Mac
+- [x] Support Vulkan (SPIRV)
+- [ ] Support D3D12
+- [ ] Support Metal
+- [ ] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
+
 # Build
 
-## 1. Install the Vulkan SDK.
+## 1. Link the Vulkan SDK.
 
 `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
-Make sure you add `%VULKAN_SDK%\Lib` to your lib path, and `%VULKAN_SDK%\Include` to your includes path.
-
-NOTE: Perhaps in the future we'll package the dependencies into a static lib, but for now the assumption is that if you're developing a Vulkan application, you already have the Vulkan SDK anyway.
 
 ## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
 
@@ -79,16 +94,6 @@ NOTE: Perhaps in the future we'll package the dependencies into a static lib, bu
 /* your code */
 #include "cm_shader.c"
 ```
-
-# Progress
-
-- [x] Support Windows
-- [ ] Support Linux
-- [ ] Support Mac
-- [x] Support Vulkan (SPIRV)
-- [ ] Support D3D12
-- [ ] Support Metal
-- [ ] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
 
 # Documentation
 
