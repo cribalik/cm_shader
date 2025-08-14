@@ -61,18 +61,18 @@ void func() {
 
 # Build
 
-## Dependencies
+## 1. Install the Vulkan SDK.
 
-cm_shader uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
+`cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
 Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to your includes path.
 
-Include `cm_shader.h` and `cm_shader.c` into your project.
+## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
+
+`cm_shader.c` is written in a single-header-library style, so you can safely include it into your own C file without fear of name collisions.
 
 ```c++
 #include "cm_shader.h"
-
 // your code
-
 #include "cm_shader.c"
 ```
 
