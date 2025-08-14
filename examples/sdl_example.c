@@ -7,7 +7,7 @@
 
 int main(int argc, char const *argv[]) {
     /* compile shader */
-    SHAD_Result sc;
+    ShadResult sc;
     shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
 
     /* SDL initialization */
