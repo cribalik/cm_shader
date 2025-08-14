@@ -2,6 +2,7 @@
 
 - Compiles shaders written in a GLSL-style language to SPIRV
 - Fill the SDL3 GPU creation structs for you
+- Handle setting `set` and `binding` indices for you
 - Supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs
 
 ```glsl
