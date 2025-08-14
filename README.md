@@ -66,7 +66,9 @@ void func() {
 ## 1. Install the Vulkan SDK.
 
 `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
-Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to your includes path.
+Make sure you add `%VULKAN_SDK%\Lib` to your lib path, and `%VULKAN_SDK%\Include` to your includes path.
+
+NOTE: Perhaps in the future we'll package the dependencies into a static lib, but for now the assumption is that if you're developing a Vulkan application, you already have the Vulkan SDK anyway.
 
 ## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
 
@@ -86,6 +88,7 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 - [x] Support Vulkan (SPIRV)
 - [ ] Support D3D12
 - [ ] Support Metal
+- [ ] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
 
 # Documentation
 
