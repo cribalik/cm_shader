@@ -77,11 +77,14 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 #include "cm_shader.c"
 ```
 
-# Backend support
+# Progress
 
-- [x] Vulkan (SPIRV)
-- [ ] D3D12
-- [ ] Metal
+- [x] Support Windows
+- [ ] Support Linux
+- [ ] Support Mac
+- [x] Support Vulkan (SPIRV)
+- [ ] Support D3D12
+- [ ] Support Metal
 
 # Documentation
 
