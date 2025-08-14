@@ -13,6 +13,7 @@
     @in vec2 in_pos;
     @in vec2 in_uv;
     @out vec2 vertex_uv;
+    @import "some_other_file.shader"
     void main() {
         gl_Position = vec4(in_pos, 0.0, 1.0);
         vertex_uv = in_uv;
@@ -261,3 +262,12 @@ To specify different `@blend` settings for different fragment outputs, you can j
     @output(format=rgba8) vec4 color2;
 @end
 ```
+
+### @import
+
+Example:
+```glsl
+@import "somefile.shader"
+```
+
+Works similarly to C/C++ `#include` - finds a file relative to the current file and pastes its contents in-place.
