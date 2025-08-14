@@ -68,7 +68,7 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 
 ## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
 
-`cm_shader.c` is written in a single-header-library style, so you can safely include it into your own C file without fear of name collisions.
+`cm_shader.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
 
 ```c++
 #include "cm_shader.h"
