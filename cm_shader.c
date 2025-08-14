@@ -1,7 +1,8 @@
 #include "cm_shader.h"
 #include <stdio.h>
 #include <stdarg.h>
-#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* we use glslang to cross-compile from GLSL to SPIRV */
 #include <glslang/Include/glslang_c_interface.h>
@@ -63,18 +64,37 @@ void sc__arena_destroy(SC_Arena *a) {
     }
 }
 
+typedef struct SC_File {
+    struct SC_File *next;
+    char *path;
+    char *prev_data;
+    char *prev_s;
+} SC_File;
+
 typedef struct SC_Parser {
     char *data;
     char *s;
     SC_Arena *arena;
+    SC_File *file;
 } SC_Parser;
 
-SC_Bool sc__consume(SC_Parser *p, char *token) {
+SC_Bool sc__match(SC_Parser *p, char *token) {
     char *s = p->s;
     char *t = token;
     while (isspace(*s)) if (*s++ == '\n') ++s;
     while (*s && *t && *s == *t) ++s, ++t;
     if (*t) return 0;
+    p->s = s;
+    return 1;
+}
+
+SC_Bool sc__match_identifier(SC_Parser *p, char *identifier) {
+    char *s = p->s;
+    char *t = identifier;
+    while (isspace(*s)) if (*s++ == '\n') ++s;
+    while (*s && *t && *s == *t) ++s, ++t;
+    if (*t) return 0;
+    if (isalnum(*s) || *s == '_') return 0;
     p->s = s;
     return 1;
 }
@@ -216,13 +236,12 @@ void sc__write(SC_Writer *w, const char *fmt, ...) {
     w->len += len;
 }
 
-void sc__errlog(size_t pos, SC_Parser *p, const char *fmt, ...) {
-    /* calculate line number */
-    int line_number = 0;
-    char *line = p->data;
-    for (size_t i = 0; i < pos; ++i)
-        if (p->data[i] == '\n') ++line_number, line = p->data+i+1;
-    fprintf(stderr, "Error %i: ", line_number);
+void sc__errlog(SC_CodeLocation loc, const char *fmt, ...) {
+    int line_number = 1;
+    char *line = loc.start;
+    for (char *c = loc.start; c < loc.pos; ++c)
+        if (*c == '\n') ++line_number, line = c+1;
+    fprintf(stderr, "Error %s:%i: ", loc.path, line_number);
 
     va_list args;
     va_start(args, fmt);
@@ -233,8 +252,8 @@ void sc__errlog(size_t pos, SC_Parser *p, const char *fmt, ...) {
     while (line[line_len] && line[line_len] != '\n' && line[line_len] != '\r') ++line_len;
     fprintf(stderr, "\n\n%.*s\n", line_len, line);
 }
-#define SC_ERROR(pos, parser, ...) do{sc__errlog(pos, parser, __VA_ARGS__); goto error;} while(0)
-#define SC_PARSE_ERROR(...) SC_ERROR(p.s-p.data, &p, __VA_ARGS__)
+#define SC_ERROR(loc, ...) do{sc__errlog(loc, __VA_ARGS__); goto error;} while(0)
+#define SC_PARSE_ERROR(...) do{SC_CodeLocation loc = {p.file->path, p.data, p.s}; SC_ERROR(loc, __VA_ARGS__);} while(0)
 
 char* sc__read_file(SC_Arena *a, const char *path, int *len_out) {
     FILE *file = fopen(path, "rb");
@@ -270,14 +289,16 @@ char* sc__read_file(SC_Arena *a, const char *path, int *len_out) {
 static const char sc__texture_format_options[] = "r8, rg8, rgba8, r16, rg16, rgba16, r16f, rg16f, rgba16f, r32f, rg32f, rgba32f, r11g11b10f";
 static const char sc__depth_format_options[] = "d16, d24, d32f, d24_s8, d32f_s8";
 
-SC_Bool sc__consume_blend(SC_Parser *p, int *blend_code_location, SC_BlendFactor *blend_src, SC_BlendFactor *blend_dst, SC_BlendOp *blend_op) {
-    *blend_code_location = (int)(p->s - p->data);
+SC_Bool sc__consume_blend(SC_Parser *p, SC_CodeLocation *blend_code_location, SC_BlendFactor *blend_src, SC_BlendFactor *blend_dst, SC_BlendOp *blend_op) {
+    blend_code_location->start = p->data;
+    blend_code_location->pos = p->s;
+    blend_code_location->path = p->file->path;
 
-    if (sc__consume(p, "default")) {
+    if (sc__match_identifier(p, "default")) {
         *blend_src = SC_BLEND_FACTOR_SRC_ALPHA;
         *blend_dst = SC_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         *blend_op = SC_BLEND_OP_ADD;
-    } else if (sc__consume(p, "off")) {
+    } else if (sc__match_identifier(p, "off")) {
         *blend_src = 0;
         *blend_dst = 0;
         *blend_op = 0;
@@ -285,9 +306,9 @@ SC_Bool sc__consume_blend(SC_Parser *p, int *blend_code_location, SC_BlendFactor
         *blend_src = sc__consume_blend_factor(p);
         *blend_dst = sc__consume_blend_factor(p);
         *blend_op = sc__consume_blend_op(p);
-        if (!*blend_src) SC_ERROR(*blend_code_location, p, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
-        if (!*blend_dst) SC_ERROR(*blend_code_location, p, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
-        if (!*blend_op) SC_ERROR(*blend_code_location, p, "Invalid source blend operation. Options are: add, subtract, rev_subtract, min, max");
+        if (!*blend_src) SC_ERROR(*blend_code_location, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
+        if (!*blend_dst) SC_ERROR(*blend_code_location, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
+        if (!*blend_op) SC_ERROR(*blend_code_location, "Invalid blend operation. Options are: add, subtract, rev_subtract, min, max");
     }
     return 1;
 
@@ -296,70 +317,85 @@ SC_Bool sc__consume_blend(SC_Parser *p, int *blend_code_location, SC_BlendFactor
 }
 
 SC_TextureFormat sc__consume_texture_format(SC_Parser *p) {
-    if (sc__consume(p, "r8")) return SC_TEXTURE_FORMAT_R8;
-    if (sc__consume(p, "rg8")) return SC_TEXTURE_FORMAT_RG8;
-    if (sc__consume(p, "rgba8")) return SC_TEXTURE_FORMAT_RGBA8;
-    if (sc__consume(p, "r16")) return SC_TEXTURE_FORMAT_R16;
-    if (sc__consume(p, "rg16")) return SC_TEXTURE_FORMAT_RG16;
-    if (sc__consume(p, "rgba16")) return SC_TEXTURE_FORMAT_RGBA16;
-    if (sc__consume(p, "r16f")) return SC_TEXTURE_FORMAT_R16F;
-    if (sc__consume(p, "rg16f")) return SC_TEXTURE_FORMAT_RG16F;
-    if (sc__consume(p, "rgba16f")) return SC_TEXTURE_FORMAT_RGBA16F;
-    if (sc__consume(p, "r32f")) return SC_TEXTURE_FORMAT_R32F;
-    if (sc__consume(p, "rg32f")) return SC_TEXTURE_FORMAT_RG32F;
-    if (sc__consume(p, "rgba32f")) return SC_TEXTURE_FORMAT_RGBA32F;
-    if (sc__consume(p, "r11g11b10f")) return SC_TEXTURE_FORMAT_R11G11B10F;
-    if (sc__consume(p, "d16")) return SC_TEXTURE_FORMAT_D16;
-    if (sc__consume(p, "d24")) return SC_TEXTURE_FORMAT_D24;
-    if (sc__consume(p, "d32f")) return SC_TEXTURE_FORMAT_D32F;
-    if (sc__consume(p, "d24_s8")) return SC_TEXTURE_FORMAT_D24_S8;
-    if (sc__consume(p, "d32f_s8")) return SC_TEXTURE_FORMAT_D32F_S8;
+    if (sc__match_identifier(p, "r8")) return SC_TEXTURE_FORMAT_R8;
+    if (sc__match_identifier(p, "rg8")) return SC_TEXTURE_FORMAT_RG8;
+    if (sc__match_identifier(p, "rgba8")) return SC_TEXTURE_FORMAT_RGBA8;
+    if (sc__match_identifier(p, "r16")) return SC_TEXTURE_FORMAT_R16;
+    if (sc__match_identifier(p, "rg16")) return SC_TEXTURE_FORMAT_RG16;
+    if (sc__match_identifier(p, "rgba16")) return SC_TEXTURE_FORMAT_RGBA16;
+    if (sc__match_identifier(p, "r16f")) return SC_TEXTURE_FORMAT_R16F;
+    if (sc__match_identifier(p, "rg16f")) return SC_TEXTURE_FORMAT_RG16F;
+    if (sc__match_identifier(p, "rgba16f")) return SC_TEXTURE_FORMAT_RGBA16F;
+    if (sc__match_identifier(p, "r32f")) return SC_TEXTURE_FORMAT_R32F;
+    if (sc__match_identifier(p, "rg32f")) return SC_TEXTURE_FORMAT_RG32F;
+    if (sc__match_identifier(p, "rgba32f")) return SC_TEXTURE_FORMAT_RGBA32F;
+    if (sc__match_identifier(p, "r11g11b10f")) return SC_TEXTURE_FORMAT_R11G11B10F;
+    if (sc__match_identifier(p, "d16")) return SC_TEXTURE_FORMAT_D16;
+    if (sc__match_identifier(p, "d24")) return SC_TEXTURE_FORMAT_D24;
+    if (sc__match_identifier(p, "d32f")) return SC_TEXTURE_FORMAT_D32F;
+    if (sc__match_identifier(p, "d24_s8")) return SC_TEXTURE_FORMAT_D24_S8;
+    if (sc__match_identifier(p, "d32f_s8")) return SC_TEXTURE_FORMAT_D32F_S8;
     return SC_TEXTURE_FORMAT_INVALID;
 }
 
 SC_CompareOp sc__consume_compare_op(SC_Parser *p) {
-    if (sc__consume(p, "never")) return SC_COMPARE_OP_NEVER;
-    if (sc__consume(p, "less")) return SC_COMPARE_OP_LESS;
-    if (sc__consume(p, "equal")) return SC_COMPARE_OP_EQUAL;
-    if (sc__consume(p, "less_or_equal")) return SC_COMPARE_OP_LESS_OR_EQUAL;
-    if (sc__consume(p, "greater")) return SC_COMPARE_OP_GREATER;
-    if (sc__consume(p, "not_equal")) return SC_COMPARE_OP_NOT_EQUAL;
-    if (sc__consume(p, "greater_or_equal")) return SC_COMPARE_OP_GREATER_OR_EQUAL;
-    if (sc__consume(p, "always")) return SC_COMPARE_OP_ALWAYS;
+    if (sc__match_identifier(p, "never")) return SC_COMPARE_OP_NEVER;
+    if (sc__match_identifier(p, "less")) return SC_COMPARE_OP_LESS;
+    if (sc__match_identifier(p, "equal")) return SC_COMPARE_OP_EQUAL;
+    if (sc__match_identifier(p, "less_or_equal")) return SC_COMPARE_OP_LESS_OR_EQUAL;
+    if (sc__match_identifier(p, "greater")) return SC_COMPARE_OP_GREATER;
+    if (sc__match_identifier(p, "not_equal")) return SC_COMPARE_OP_NOT_EQUAL;
+    if (sc__match_identifier(p, "greater_or_equal")) return SC_COMPARE_OP_GREATER_OR_EQUAL;
+    if (sc__match_identifier(p, "always")) return SC_COMPARE_OP_ALWAYS;
     return SC_COMPARE_OP_INVALID;
 }
 
 SC_CullMode sc__consume_cull_mode(SC_Parser *p) {
-    if (sc__consume(p, "none")) return SC_CULL_MODE_NONE;
-    if (sc__consume(p, "front")) return SC_CULL_MODE_FRONT;
-    if (sc__consume(p, "back")) return SC_CULL_MODE_BACK;
+    if (sc__match_identifier(p, "none")) return SC_CULL_MODE_NONE;
+    if (sc__match_identifier(p, "front")) return SC_CULL_MODE_FRONT;
+    if (sc__match_identifier(p, "back")) return SC_CULL_MODE_BACK;
     return SC_CULL_MODE_INVALID;
 }
 
 SC_BlendFactor sc__consume_blend_factor(SC_Parser *p) {
-    if (sc__consume(p, "zero")) return SC_BLEND_FACTOR_ZERO;
-    if (sc__consume(p, "one")) return SC_BLEND_FACTOR_ONE;
-    if (sc__consume(p, "src_color")) return SC_BLEND_FACTOR_SRC_COLOR;
-    if (sc__consume(p, "one_minus_src_color")) return SC_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
-    if (sc__consume(p, "dst_color")) return SC_BLEND_FACTOR_DST_COLOR;
-    if (sc__consume(p, "one_minus_dst_color")) return SC_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
-    if (sc__consume(p, "src_alpha")) return SC_BLEND_FACTOR_SRC_ALPHA;
-    if (sc__consume(p, "one_minus_src_alpha")) return SC_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    if (sc__consume(p, "dst_alpha")) return SC_BLEND_FACTOR_DST_ALPHA;
-    if (sc__consume(p, "one_minus_dst_alpha")) return SC_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
-    if (sc__consume(p, "constant_color")) return SC_BLEND_FACTOR_CONSTANT_COLOR;
-    if (sc__consume(p, "one_minus_constant_color")) return SC_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
-    if (sc__consume(p, "src_alpha_saturate")) return SC_BLEND_FACTOR_SRC_ALPHA_SATURATE;
+    if (sc__match_identifier(p, "zero")) return SC_BLEND_FACTOR_ZERO;
+    if (sc__match_identifier(p, "one")) return SC_BLEND_FACTOR_ONE;
+    if (sc__match_identifier(p, "src_color")) return SC_BLEND_FACTOR_SRC_COLOR;
+    if (sc__match_identifier(p, "one_minus_src_color")) return SC_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+    if (sc__match_identifier(p, "dst_color")) return SC_BLEND_FACTOR_DST_COLOR;
+    if (sc__match_identifier(p, "one_minus_dst_color")) return SC_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+    if (sc__match_identifier(p, "src_alpha")) return SC_BLEND_FACTOR_SRC_ALPHA;
+    if (sc__match_identifier(p, "one_minus_src_alpha")) return SC_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    if (sc__match_identifier(p, "dst_alpha")) return SC_BLEND_FACTOR_DST_ALPHA;
+    if (sc__match_identifier(p, "one_minus_dst_alpha")) return SC_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+    if (sc__match_identifier(p, "constant_color")) return SC_BLEND_FACTOR_CONSTANT_COLOR;
+    if (sc__match_identifier(p, "one_minus_constant_color")) return SC_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+    if (sc__match_identifier(p, "src_alpha_saturate")) return SC_BLEND_FACTOR_SRC_ALPHA_SATURATE;
     return SC_BLEND_FACTOR_INVALID;
 }
 
 SC_BlendOp sc__consume_blend_op(SC_Parser *p) {
-    if (sc__consume(p, "add")) return SC_BLEND_OP_ADD;
-    if (sc__consume(p, "subtract")) return SC_BLEND_OP_SUBTRACT;
-    if (sc__consume(p, "rev_subtract")) return SC_BLEND_OP_REV_SUBTRACT;
-    if (sc__consume(p, "min")) return SC_BLEND_OP_MIN;
-    if (sc__consume(p, "max")) return SC_BLEND_OP_MAX;
+    if (sc__match_identifier(p, "add")) return SC_BLEND_OP_ADD;
+    if (sc__match_identifier(p, "subtract")) return SC_BLEND_OP_SUBTRACT;
+    if (sc__match_identifier(p, "rev_subtract")) return SC_BLEND_OP_REV_SUBTRACT;
+    if (sc__match_identifier(p, "min")) return SC_BLEND_OP_MIN;
+    if (sc__match_identifier(p, "max")) return SC_BLEND_OP_MAX;
     return SC_BLEND_OP_INVALID;
+}
+
+char* sc__consume_texture(SC_Parser *p) {
+    char *format = 0;
+    if (sc__match(p, "(")) {
+        while (1) {
+            if (sc__match(p, ",")) continue;
+            else if (sc__match(p, ")")) break;
+            else if (sc__match_identifier(p, "format")) {
+                if (!sc__match(p, "=")) return 0;
+                if (!(format = sc__consume_identifier(p))) return 0;
+            }
+        }
+    }
+    return format;
 }
 
 SC_Bool sc__glslang(glslang_stage_t stage, SC_Arena *arena, char *code, size_t code_size, uint32_t **result_code, size_t *result_code_size) {
@@ -430,7 +466,7 @@ SC_Bool sc__glslang(glslang_stage_t stage, SC_Arena *arena, char *code, size_t c
     return 1;
 }
 
-int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *result) {
+SC_Bool sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *result) {
     SC_Arena tmp = {0};
     SC_Arena arena = {0};
 
@@ -443,7 +479,9 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
 
     enum {START, VERT, MID, FRAG, END} state = START;
 
-    SC_Parser p = {code, code, &arena};
+    SC_File *file_info = SC_ALLOC(SC_File, &tmp, 1);
+    file_info->path = (char*)path;
+    SC_Parser p = {code, code, &arena, file_info};
 
     /* AST definitions */
     enum {
@@ -451,12 +489,12 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         SC_AstVertTextType,
         SC_AstVertInType,
         SC_AstVertOutType,
-        SC_AstVertImageType,
+        SC_AstVertTextureType,
         SC_AstVertBufferType,
         SC_AstVertSamplerType,
         SC_AstVertUniformType,
         SC_AstFragTextType,
-        SC_AstFragImageType,
+        SC_AstFragTextureType,
         SC_AstFragBufferType,
         SC_AstFragSamplerType,
         SC_AstFragUniformType,
@@ -464,23 +502,23 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         SC_AstType,
     };
 
-    typedef struct SC_Ast          {int type; struct SC_Ast *next; int code_location;} SC_Ast;
-    typedef struct SC_AstText      {SC_Ast base; int start; int end;} SC_AstText;
-    typedef struct SC_AstVertText      {SC_Ast base; int start; int end;} SC_AstVertText;
-    typedef struct SC_AstFragText      {SC_Ast base; int start; int end;} SC_AstFragText;
+    typedef struct SC_Ast          {int type; struct SC_Ast *next; SC_CodeLocation code_location;} SC_Ast;
+    typedef struct SC_AstText      {SC_Ast base; char *start; char *end;} SC_AstText;
+    typedef struct SC_AstVertText      {SC_Ast base; char *start; char *end;} SC_AstVertText;
+    typedef struct SC_AstFragText      {SC_Ast base; char *start; char *end;} SC_AstFragText;
     typedef struct SC_AstVertIn    {SC_Ast base; SC_VertexInput attr;} SC_AstVertIn;
     typedef struct SC_AstVertOut   {SC_Ast base;} SC_AstVertOut;
     typedef struct SC_AstVertSampler   {SC_Ast base;} SC_AstVertSampler;
-    typedef struct SC_AstVertBuffer    {SC_Ast base; SC_Bool readonly;} SC_AstVertBuffer;
-    typedef struct SC_AstVertImage     {SC_Ast base;} SC_AstVertImage;
+    typedef struct SC_AstVertBuffer    {SC_Ast base; SC_Bool readonly; SC_Bool writeonly;} SC_AstVertBuffer;
+    typedef struct SC_AstVertTexture     {SC_Ast base; char *format;} SC_AstVertTexture;
     typedef struct SC_AstVertUniform   {SC_Ast base;} SC_AstVertUniform;
     typedef struct SC_AstFragOut   {SC_Ast base; SC_FragmentOutput out;} SC_AstFragOut;
     typedef struct SC_AstFragSampler   {SC_Ast base;} SC_AstFragSampler;
-    typedef struct SC_AstFragBuffer    {SC_Ast base; SC_Bool readonly;} SC_AstFragBuffer;
-    typedef struct SC_AstFragImage     {SC_Ast base;} SC_AstFragImage;
+    typedef struct SC_AstFragBuffer    {SC_Ast base; SC_Bool readonly; SC_Bool writeonly;} SC_AstFragBuffer;
+    typedef struct SC_AstFragTexture     {SC_Ast base; char *format;} SC_AstFragTexture;
     typedef struct SC_AstFragUniform   {SC_Ast base;} SC_AstFragUniform;
 
-    int curr_blend_code_location = 0;
+    SC_CodeLocation curr_blend_code_location = {0};
     SC_BlendFactor curr_blend_src = 0;
     SC_BlendFactor curr_blend_dst = 0;
     SC_BlendOp curr_blend_op = 0;
@@ -488,7 +526,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
     SC_Ast *ast_root = 0;
     SC_Ast **ast = &ast_root;
     #define SC_AST_PUSH(_type, ...) do { \
-        _type _ast = {_type##Type, NULL, (int)(p.s - p.data), ##__VA_ARGS__}; \
+        _type _ast = {_type##Type, NULL, p.file->path, p.data, p.s, ##__VA_ARGS__}; \
         _type *data = (_type*)SC_ALLOC(_type, &tmp, 1); \
         memcpy(data, &_ast, sizeof(_ast)); \
         *data = _ast; \
@@ -497,22 +535,30 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
     } while (0)
 
     char *last_pos = p.s;
-    while (*p.s) {
-        if (*p.s != '@') {++p.s; continue;}
+    while (p.file) {
+        if (*p.s != '@' && *p.s != 0) {++p.s; continue;}
 
         if (state == VERT)
-            SC_AST_PUSH(SC_AstVertText, (int)(last_pos - p.data), (int)(p.s - p.data));
+            SC_AST_PUSH(SC_AstVertText, last_pos, p.s);
         else if (state == FRAG)
-            SC_AST_PUSH(SC_AstFragText, (int)(last_pos - p.data), (int)(p.s - p.data));
+            SC_AST_PUSH(SC_AstFragText, last_pos, p.s);
         else
-            SC_AST_PUSH(SC_AstText, (int)(last_pos - p.data), (int)(p.s - p.data));
+            SC_AST_PUSH(SC_AstText, last_pos, p.s);
 
-        if (sc__consume(&p, "@import")) {
-            if (!sc__consume(&p, "\"")) SC_PARSE_ERROR("Expected file to import");
+        if (!*p.s) {
+            p.data = p.file->prev_data;
+            p.s = p.file->prev_s;
+            p.file = p.file->next;
+            last_pos = p.s;
+            continue;
+        }
+
+        if (sc__match_identifier(&p, "@import")) {
+            if (!sc__match(&p, "\"")) SC_PARSE_ERROR("Expected file to import");
             char *import_start = p.s;
             while (*p.s && *p.s != '"') ++p.s;
             char *import_end = p.s;
-            if (!sc__consume(&p, "\"")) SC_PARSE_ERROR("No end to import file path");
+            if (!sc__match(&p, "\"")) SC_PARSE_ERROR("No end to import file path");
 
             /* find file */
             const char *dir_start = path;
@@ -521,22 +567,24 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             ++dir_end;
 
             char *file = sc__strcat(&tmp, dir_start, dir_end, import_start, import_end, 0);
-            fprintf(stderr, "Importing file %s\n", file);
 
             int contents_len;
             char *contents = sc__read_file(&tmp, file, &contents_len);
             if (!contents) SC_PARSE_ERROR("'%s': No such file", file);
 
             /* splice in the contents. This is so that the imported code also gets parsed */
-            char *new_code = sc__strcat(&tmp, code, p.s, contents, contents + contents_len, p.s, code_end, 0);
-            p.s = new_code + (p.s - code);
-            code_len += contents_len;
-            code_end = new_code + code_len;
-            code = new_code;
+            SC_File *f = SC_ALLOC(SC_File, &tmp, 1);
+            f->next = p.file;
+            f->path = file;
+            f->prev_data = p.data;
+            f->prev_s = p.s;
+            p.file = f;
+            p.data = contents;
+            p.s = contents;
             goto next_token;
         }
 
-        if (sc__consume(&p, "@blend")) {
+        if (sc__match_identifier(&p, "@blend")) {
             if (!sc__consume_blend(&p, &curr_blend_code_location, &curr_blend_src, &curr_blend_dst, &curr_blend_op))
                 goto error;
             goto next_token;
@@ -545,13 +593,15 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         switch (state) {
         case START:
 
-            if (sc__consume(&p, "@vert")) {
+            if (sc__match_identifier(&p, "@vert")) {
                 state = VERT;
             }
-            else if (sc__consume(&p, "@depth")) {
-                result->depth_code_location = (int)(p.s - p.data);
+            else if (sc__match_identifier(&p, "@depth")) {
+                result->depth_code_location.path = p.file->path;
+                result->depth_code_location.pos = p.s;
+                result->depth_code_location.start = p.data;
                 /* compare op */
-                if (sc__consume(&p, "default")) {
+                if (sc__match_identifier(&p, "default")) {
                     result->depth_cmp = SC_COMPARE_OP_LESS;
                 } else {
                     result->depth_cmp = sc__consume_compare_op(&p);
@@ -559,9 +609,9 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 }
 
                 /* read/write */
-                if (sc__consume(&p, "write"))
+                if (sc__match_identifier(&p, "write"))
                     result->depth_write = 1;
-                else if (sc__consume(&p, "read"))
+                else if (sc__match_identifier(&p, "read"))
                     result->depth_write = 0;
                 else
                     SC_PARSE_ERROR("Expected depth read/write flag. Options are: read, write");
@@ -570,19 +620,21 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 if (!result->depth_format) SC_PARSE_ERROR("Expected depth format after read/write. Valid formats are: %s", sc__depth_format_options);
 
                 /* clip/clamp */
-                if (sc__consume(&p, "clip"))
+                if (sc__match_identifier(&p, "clip"))
                     result->depth_clip = 1;
-                else if (sc__consume(&p, "clamp"))
+                else if (sc__match_identifier(&p, "clamp"))
                     result->depth_clip = 0;
                 else
                     SC_PARSE_ERROR("Invalid depth format. Options are: clamp, clip");
             }
-            else if (sc__consume(&p, "@cull")) {
-                result->cull_code_location = (int)(p.s - p.data);
+            else if (sc__match_identifier(&p, "@cull")) {
+                result->cull_code_location.path = p.file->path;
+                result->cull_code_location.pos = p.s;
+                result->cull_code_location.start = p.data;
                 result->cull_mode = sc__consume_cull_mode(&p);
                 if (!result->cull_mode) SC_PARSE_ERROR("Invalid cull mode value. Options are: none, front, back");
             }
-            else if (sc__consume(&p, "@multisample")) {
+            else if (sc__match_identifier(&p, "@multisample")) {
                 int ms;
                 if (!sc__consume_integer(&p, &ms)) SC_PARSE_ERROR("Expected number of samples.\nExample:\n@multisample 4");
                 if (ms != 1 && ms != 2 && ms != 4 && ms != 8) SC_PARSE_ERROR("Invalid multisampling count. Supported values are 1,2,4,8");
@@ -594,32 +646,34 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
 
         case VERT:
-            if (sc__consume(&p, "@in")) {
+            if (sc__match_identifier(&p, "@in")) {
                 SC_VertexInput attr = {0};
-                attr.code_location = (int)(p.s - p.data);
-                if (sc__consume(&p, "(")) {
+                attr.code_location.path = p.file->path;
+                attr.code_location.pos = p.s;
+                attr.code_location.start = p.data;
+                if (sc__match(&p, "(")) {
                     while (1) {
-                        if (sc__consume(&p, ",")) continue;
-                        else if (sc__consume(&p, ")")) break;
-                        else if (sc__consume(&p, "buffer")) {
-                            if (!sc__consume(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'buffer'. Example: @in(buffer=1) vec4 color;");
+                        if (sc__match(&p, ",")) continue;
+                        else if (sc__match(&p, ")")) break;
+                        else if (sc__match_identifier(&p, "buffer")) {
+                            if (!sc__match(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'buffer'. Example: @in(buffer=1) vec4 color;");
                             sc__consume_whitespace(&p);
                             if (!isdigit(*p.s)) SC_PARSE_ERROR("Expected buffer number. Example: @in(buffer=1) vec4 color;");
                             attr.buffer_slot = 0;
                             while (isdigit(*p.s))
                                 attr.buffer_slot *= 10, attr.buffer_slot += *p.s - '0', ++p.s;
                         }
-                        else if (sc__consume(&p, "type")) {
-                            if (!sc__consume(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'type'. Example: @in(type=u8) vec4 color;");
+                        else if (sc__match_identifier(&p, "type")) {
+                            if (!sc__match(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'type'. Example: @in(type=u8) vec4 color;");
                             if (!(attr.component_type = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected component type. Example: @in(type=u8) vec4 color;");
                         }
-                        else if (sc__consume(&p, "instanced")) {
+                        else if (sc__match_identifier(&p, "instanced")) {
                             attr.instanced = 1;
                         }
                     }
                 }
 
-                attr.is_flat = sc__consume(&p, "flat");
+                attr.is_flat = sc__match_identifier(&p, "flat");
 
                 if (!(attr.data_type = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected vertex attribute data type");
                 if (!(attr.name = sc__consume_identifier(&p))) SC_PARSE_ERROR("Expected vertex attribute name");
@@ -689,24 +743,27 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
 
                 SC_AST_PUSH(SC_AstVertIn, attr);
             }
-            else if (sc__consume(&p, "@sampler")) {
+            else if (sc__match_identifier(&p, "@sampler")) {
                 SC_AST_PUSH(SC_AstVertSampler);
             }
-            else if (sc__consume(&p, "@image")) {
-                SC_AST_PUSH(SC_AstVertImage);
+            else if (sc__match_identifier(&p, "@image")) {
+                char *format = sc__consume_texture(&p);
+                if (!format) SC_PARSE_ERROR("You must specify the texture format.\nExample:\n@image(format=rgba8) mytexture;\n\nValid formats are: %s", sc__texture_format_options);
+                SC_AST_PUSH(SC_AstVertTexture, format);
             }
-            else if (sc__consume(&p, "@buffer")) {
-                SC_Bool readonly = sc__consume(&p, "readonly");
-                SC_AST_PUSH(SC_AstVertBuffer, readonly);
+            else if (sc__match_identifier(&p, "@buffer")) {
+                SC_Bool readonly = sc__match_identifier(&p, "readonly");
+                SC_Bool writeonly = sc__match_identifier(&p, "writeonly");
+                SC_AST_PUSH(SC_AstVertBuffer, readonly, writeonly);
             }
-            else if (sc__consume(&p, "@uniform")) {
+            else if (sc__match_identifier(&p, "@uniform")) {
                 SC_AST_PUSH(SC_AstVertUniform);
             }
-            else if (sc__consume(&p, "@out")) {
+            else if (sc__match_identifier(&p, "@out")) {
                 SC_AST_PUSH(SC_AstVertOut);
                 while (*p.s && *p.s != ';') ++p.s;
             }
-            else if (sc__consume(&p, "@end")) {
+            else if (sc__match_identifier(&p, "@end")) {
                 state = MID;
             }
             else
@@ -714,7 +771,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
 
         case MID:
-            if (!sc__consume(&p, "@frag")) SC_PARSE_ERROR("Expected @frag to start fragment shader (or end of file to omit fragment shader)");
+            if (!sc__match_identifier(&p, "@frag")) SC_PARSE_ERROR("Expected @frag to start fragment shader (or end of file to omit fragment shader)");
             result->has_fragment_shader = 1;
             state = FRAG;
             break;
@@ -724,15 +781,17 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
             break;
 
         case FRAG:
-            if (sc__consume(&p, "@out")) {
+            if (sc__match_identifier(&p, "@out")) {
                 SC_FragmentOutput output = {0};
-                output.code_location = (int)(p.s - p.data);
-                if (sc__consume(&p, "(")) {
+                output.code_location.path = p.file->path;
+                output.code_location.pos = p.s;
+                output.code_location.start = p.data;
+                if (sc__match(&p, "(")) {
                     while (1) {
-                        if (sc__consume(&p, ",")) continue;
-                        else if (sc__consume(&p, ")")) break;
-                        else if (sc__consume(&p, "format")) {
-                            if (!sc__consume(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'format'. Example: @out(format=u8) vec4 color;");
+                        if (sc__match(&p, ",")) continue;
+                        else if (sc__match(&p, ")")) break;
+                        else if (sc__match_identifier(&p, "format")) {
+                            if (!sc__match(&p, "=")) SC_PARSE_ERROR("Expected '=' after 'format'. Example: @out(format=u8) vec4 color;");
                             if (!(output.format = sc__consume_texture_format(&p))) SC_PARSE_ERROR("Expected data format. Example: @out(format=rgba8) vec4 color; Valid formats are: %s", sc__texture_format_options);
                         }
                     }
@@ -743,20 +802,23 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 output.blend_op = curr_blend_op;
                 SC_AST_PUSH(SC_AstFragOut, output);
             }
-            else if (sc__consume(&p, "@sampler")) {
+            else if (sc__match_identifier(&p, "@sampler")) {
                 SC_AST_PUSH(SC_AstFragSampler);
             }
-            else if (sc__consume(&p, "@image")) {
-                SC_AST_PUSH(SC_AstFragImage);
+            else if (sc__match_identifier(&p, "@image")) {
+                char *format = sc__consume_texture(&p);
+                if (!format) SC_PARSE_ERROR("You must specify the texture format.\nExample:\n@image(format=rgba8) mytexture;\n\nValid formats are: %s", sc__texture_format_options);
+                SC_AST_PUSH(SC_AstFragTexture, format);
             }
-            else if (sc__consume(&p, "@buffer")) {
-                SC_Bool readonly = sc__consume(&p, "readonly");
-                SC_AST_PUSH(SC_AstFragBuffer, readonly);
+            else if (sc__match_identifier(&p, "@buffer")) {
+                SC_Bool readonly = sc__match_identifier(&p, "readonly");
+                SC_Bool writeonly = sc__match_identifier(&p, "writeonly");
+                SC_AST_PUSH(SC_AstFragBuffer, readonly, writeonly);
             }
-            else if (sc__consume(&p, "@uniform")) {
+            else if (sc__match_identifier(&p, "@uniform")) {
                 SC_AST_PUSH(SC_AstFragUniform);
             }
-            else if (sc__consume(&p, "@end")) {
+            else if (sc__match_identifier(&p, "@end")) {
                 state = END;
             }
             else
@@ -785,12 +847,12 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
         num_vertex_inputs += node->type == SC_AstVertInType;
         num_vertex_outputs += node->type == SC_AstVertOutType;
         num_vertex_samplers += node->type == SC_AstVertSamplerType;
-        num_vertex_images += node->type == SC_AstVertImageType;
+        num_vertex_images += node->type == SC_AstVertTextureType;
         num_vertex_buffers += node->type == SC_AstVertBufferType;
         num_vertex_uniforms += node->type == SC_AstVertUniformType;
         num_fragment_outputs += node->type == SC_AstFragOutType;
         num_fragment_samplers += node->type == SC_AstFragSamplerType;
-        num_fragment_images += node->type == SC_AstFragImageType;
+        num_fragment_images += node->type == SC_AstFragTextureType;
         num_fragment_buffers += node->type == SC_AstFragBufferType;
         num_fragment_uniforms += node->type == SC_AstFragUniformType;
     }
@@ -824,7 +886,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                 buffer->instanced = in->instanced;
             }
             else if (buffer->instanced != in->instanced)
-                SC_ERROR(in->code_location, &p, "All attributes for buffer %i must be specified as instanced");
+                SC_ERROR(in->code_location, "All attributes for buffer %i must be specified as instanced", in->buffer_slot);
         }
     }
 
@@ -877,9 +939,9 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                     case SC_AstFragTextType: {
                         SC_AstText *text = (SC_AstText*)node;
                         if (node->type == SC_AstVertTextType || node->type == SC_AstTextType)
-                            sc__write(&vertex_output, "%.*s", (int)(text->end - text->start), p.data + text->start);
+                            sc__write(&vertex_output, "%.*s", (int)(text->end - text->start), text->start);
                         if (node->type == SC_AstFragTextType || node->type == SC_AstTextType)
-                            sc__write(&fragment_output, "%.*s", (int)(text->end - text->start), p.data + text->start);
+                            sc__write(&fragment_output, "%.*s", (int)(text->end - text->start), text->start);
                         break;
                     }
                     case SC_AstVertInType: {
@@ -890,7 +952,7 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                     }
                     case SC_AstVertOutType: {
                         SC_AstVertOut *out = (SC_AstVertOut*)node;
-                        char *rest = p.data + out->base.code_location;
+                        char *rest = out->base.code_location.pos;
                         int rest_len = 0;
                         while (rest[rest_len] && rest[rest_len] != ';') ++rest_len;
                         sc__write(&vertex_output, "layout(location = %i) out%.*s", vertex_output_index, rest_len, rest);
@@ -899,20 +961,28 @@ int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *resul
                         break;
                     }
                     case SC_AstVertSamplerType: sc__write(&vertex_output, "layout(set = 0, binding = %i) uniform", vertex_sampler_index), ++vertex_sampler_index; break;
-                    case SC_AstVertImageType:   sc__write(&vertex_output, "layout(set = 0, binding = %i) uniform", vertex_image_index), ++vertex_image_index; break;
+                    case SC_AstVertTextureType: {
+                        SC_AstVertTexture *tex = (SC_AstVertTexture*)node;
+                        sc__write(&vertex_output, "layout(set = 0, binding = %i, %s) uniform image2D", vertex_image_index, tex->format), ++vertex_image_index; break;
+                        break;
+                    }
                     case SC_AstVertBufferType: {
                         SC_AstVertBuffer *buf = (SC_AstVertBuffer*)node;
-                        sc__write(&vertex_output, "layout(std140, set = 0, binding = %i) buffer%s Buffer%i", vertex_buffer_index, buf->readonly ? " readonly" : "", vertex_buffer_index);
+                        sc__write(&vertex_output, "layout(std140, set = 0, binding = %i) buffer%s Buffer%i", vertex_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? "writeonly" : "", vertex_buffer_index);
                         ++vertex_buffer_index;
                         break;
                     }
                     case SC_AstVertUniformType: sc__write(&vertex_output, "layout(std140, set = 1, binding = %i) uniform Uniform%i", vertex_uniform_index, vertex_uniform_index), ++vertex_uniform_index; break;
                     case SC_AstFragOutType:     sc__write(&fragment_output, "layout(location = %i) out", fragment_output_index), ++fragment_output_index; break;
                     case SC_AstFragSamplerType: sc__write(&fragment_output, "layout(set = 2, binding = %i) uniform", fragment_sampler_index), ++fragment_sampler_index; break;
-                    case SC_AstFragImageType:   sc__write(&fragment_output, "layout(set = 2, binding = %i) uniform", fragment_image_index), ++fragment_image_index; break;
+                    case SC_AstFragTextureType: {
+                        SC_AstFragTexture *tex = (SC_AstFragTexture*)node;
+                        sc__write(&fragment_output, "layout(set = 2, binding = %i, %s) uniform image2D", fragment_image_index, tex->format), ++fragment_image_index; break;
+                        break;
+                    }
                     case SC_AstFragBufferType: {
                         SC_AstFragBuffer *buf = (SC_AstFragBuffer*)node;
-                        sc__write(&fragment_output, "layout(std140, set = 2, binding = %i) buffer%s Buffer%i", fragment_buffer_index, buf->readonly ? " readonly" : "", fragment_buffer_index);
+                        sc__write(&fragment_output, "layout(std140, set = 2, binding = %i) buffer%s Buffer%i", fragment_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? "writeonly" : "", fragment_buffer_index);
                         ++fragment_buffer_index;
                         break;
                     }

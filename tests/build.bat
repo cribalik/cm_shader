@@ -1,0 +1,1 @@
+cl -I%VULKAN_SDK%\Include -I. -I.. test.c -Fetest.exe -MD -link -libpath:%VULKAN_SDK%\Lib

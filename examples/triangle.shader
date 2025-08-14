@@ -1,4 +1,6 @@
 @vert
+@in(buffer=1) vec3 v1;
+@in
 @out vec3 color;
 void main() {
     vec2 pos = vec2[3](vec2(-0.5,-0.5), vec2(0,0.5), vec2(0.5, -0.5))[gl_VertexIndex];

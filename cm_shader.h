@@ -1,6 +1,8 @@
 #ifndef CM_SHADER_H
 #define CM_SHADER_H
 
+#include <stdint.h>
+
 /*
 
 cm_shader - Super-powered GLSL with SDL3 integration
@@ -9,71 +11,7 @@ cm_shader - Super-powered GLSL with SDL3 integration
 You write your shaders in a GLSL-style language, it can transpile it to SPIRV, and can fill the SDL creation structs for you.
 It also supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs.
 
-
-Example usage
-=============
-
-// main.c
-
-void func() {
-    // parse and compile shader
-    SC_Result sc;
-    sc_compile("my_shaders/triangle.shader", SC_OUTPUT_FORMAT_SDL, &sc);
-
-    // SDL shader creation
-    SDL_GPUShaderCreateInfo vsinfo, fsinfo;
-    sc_sdl_prefill_vertex_shader(&vsinfo, &sc);
-    sc_sdl_prefill_fragment_shader(&fsinfo, &sc);
-    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &vsinfo);
-    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &fsinfo);
-
-    // SDL pipeline creation
-    SDL_GPUGraphicsPipelineCreateInfo pinfo;
-    sc_sdl_prefill_pipeline(&pinfo, &sc);
-    SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
-
-    // destroy result
-    sc_result_free(&sc);
-}
-
-// my_shaders/triangle.shader
-
-@vert
-
-    @in           vec3 in_pos;                 // buffer slot = 0 by default
-    @in(type=u8)  vec4 in_color;      // component type will be unsigned byte, so color is char[4]
-    @in(buffer=1) vec2 in_uv;        // buffer slot = 1
-    @uniform {vec2 offset;};         // all uniforms are std140
-
-    // vertex shader outputs will automatically get added as fragment shader inputs
-    @out vec4 vertex_color;
-    @out vec2 vertex_uv;
-
-    void main() {
-        gl_Position = vec4(in_pos + offset, 0.0, 1.0);
-        vertex_color = in_color;
-        vertex_uv = in_uv;
-    }
-
-@end
-
-@frag
-
-    @sampler sampler2D some_other_color;
-    @buffer readonly some_other_color;
-    @out(format=rgba8) vec4 output_color;
-
-    void main() {
-        output_color = vertex_color * texture(some_other_color, vertex_uv);
-    }
-
-@end
-
-
-Annotation documentation
-========================
-
-TODO
+See README.md for documentation
 
 */
 
@@ -183,6 +121,12 @@ typedef enum SC_TextureFormat {
     SC_TEXTURE_FORMAT_D32F_S8,    /* @depth less write d32f_s8 clip */
 } SC_TextureFormat;
 
+typedef struct SC_CodeLocation {
+    char *path;
+    char *start;
+    char *pos;
+} SC_CodeLocation;
+
 typedef struct SC_VertexInput {
     /* example:
     *
@@ -196,7 +140,7 @@ typedef struct SC_VertexInput {
     *   format = SC_VERTEXELEMENTFORMAT_UBYTE4_NORM
     *
     */
-    int code_location;
+    SC_CodeLocation code_location;
     char *component_type;
     char *data_type;
     char *name;
@@ -210,11 +154,11 @@ typedef struct SC_VertexInput {
 } SC_VertexInput;
 
 typedef struct SC_FragmentOutput {
-    int code_location;
+    SC_CodeLocation code_location;
     SC_TextureFormat format;
 
     /* blending */
-    int blend_code_location;
+    SC_CodeLocation blend_code_location;
     SC_BlendFactor blend_src;
     SC_BlendFactor blend_dst;
     SC_BlendOp blend_op;
@@ -256,14 +200,14 @@ typedef struct SC_Result {
     int num_fragment_uniforms;
 
     /* depth */
-    int depth_code_location;
+    SC_CodeLocation depth_code_location;
     SC_Bool depth_write;
     SC_CompareOp depth_cmp;
     SC_TextureFormat depth_format;
     SC_Bool depth_clip;
 
     /* culling */
-    int cull_code_location;
+    SC_CodeLocation cull_code_location;
     SC_CullMode cull_mode;
 
     /* multisampling. Valid values are 1,2,4,8 */
@@ -274,7 +218,7 @@ typedef struct SC_Result {
 } SC_Result;
 
 /* Returns 1 on success, 0 on failure. Call sc_result_free() to free result */
-int sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *result);
+SC_Bool sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *result);
 /* Free the result */
 void sc_result_free(SC_Result*);
 
