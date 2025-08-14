@@ -68,13 +68,19 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 
 ## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
 
-`cm_shader.c` is written in a single-header-library style, so you can safely include it into your own C file without fear of name collisions.
+`cm_shader.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
 
 ```c++
 #include "cm_shader.h"
 // your code
 #include "cm_shader.c"
 ```
+
+# Backend support
+
+- [x] Vulkan (SPIRV)
+- [ ] D3D12
+- [ ] Metal
 
 # Documentation
 
@@ -98,11 +104,16 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 
 `<args>` can be any of
 - `buffer=<number>`
-  - where `<number>` is the buffer slot
+  where `<number>` is the buffer slot
 - `type=<type>`
-  - where `<type>` will indicate the component type, where valid values are: u8, i8, u16, i16. For example `@in(type=u8) vec4 color;` specifies 4 unsigned chars.
+  where `<type>` will indicate the component type, where valid values are:
+
+    `u8`, `i8`, `u16`, `i16`
+  
+  For example `@in(type=u8) vec4 color;` specifies 4 unsigned chars.
   Only vec2 and vec4 allow specifying a component type unfortunately. From what I understand, this is due to limitations in Metal.
-- `instanced`. This indicates that the buffer corresponding to this vertex input should stride forward per instance as opposed to per vertex. As instancing is on a buffer level, not vertex input level, all vertex inputs bound to this buffer need to specify it as instanced.
+- `instanced`
+  This indicates that the buffer corresponding to this vertex input should stride forward per instance as opposed to per vertex. As instancing is on a buffer level, not vertex input level, all vertex inputs bound to this buffer need to specify it as instanced.
 
 ### Fragment input/output
 
@@ -190,7 +201,7 @@ and `<format>` is one of
 - d24_s8
 - d32f_s8
 
-Culling must be specified at the top of the file before the vertex shader
+Depth must be specified at the top of the file before the vertex shader
 
 ### Multisampling
 
@@ -198,7 +209,7 @@ Culling must be specified at the top of the file before the vertex shader
 @multisample 1|2|4|8
 ```
 
-Culling must be specified at the top of the file before the vertex shader
+Multisampling must be specified at the top of the file before the vertex shader
 
 ### Culling
 
