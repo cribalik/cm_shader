@@ -2,6 +2,7 @@
 
 - Compiles shaders written in a GLSL-style language to SPIRV
 - Fill the SDL3 GPU creation structs for you
+- Handle setting `set` and `binding` indices for you
 - Supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs
 
 ```glsl
@@ -52,7 +53,7 @@ void func() {
     pinfo.fragment_shader = fshader;
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
 
-    // free compilation
+    /* free compilation */
     shad_result_free(&sc);
 }
 
@@ -72,15 +73,18 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 
 ```c++
 #include "cm_shader.h"
-// your code
+/* your code */
 #include "cm_shader.c"
 ```
 
-# Backend support
+# Progress
 
-- [x] Vulkan (SPIRV)
-- [ ] D3D12
-- [ ] Metal
+- [x] Support Windows
+- [ ] Support Linux
+- [ ] Support Mac
+- [x] Support Vulkan (SPIRV)
+- [ ] Support D3D12
+- [ ] Support Metal
 
 # Documentation
 
@@ -91,9 +95,9 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 #### Example
 
 ```glsl
-@in           vec3 in_pos;        // buffer slot = 0 by default
-@in(type=u8)  vec4 in_color;      // component type will be unsigned byte, so color is char[4]
-@in(buffer=1) vec2 in_uv;        // buffer slot = 1
+@in           vec3 in_pos;        /* buffer slot = 0 by default */
+@in(type=u8)  vec4 in_color;      /* component type will be unsigned byte, so color is char[4] */
+@in(buffer=1) vec2 in_uv;        /* buffer slot = 1 */
 @in(buffer=2, instanced) vec3 in_transform;
 ```
 
@@ -163,18 +167,18 @@ The slots for these are allocated in-order. For example:
 
 ```glsl
 @vert
-    @uniform {...} // index 0
-    @uniform {...} // index 1
-    @sampler {...} // index 0
-    @sampler {...} // index 1
+    @uniform {...} /* index 0 */
+    @uniform {...} /* index 1 */
+    @sampler {...} /* index 0 */
+    @sampler {...} /* index 1 */
     ...
 @end
 
 @vert
-    @uniform {...} // index 0
-    @uniform {...} // index 1
-    @sampler {...} // index 0
-    @sampler {...} // index 1
+    @uniform {...} /* index 0 */
+    @uniform {...} /* index 1 */
+    @sampler {...} /* index 0 */
+    @sampler {...} /* index 1 */
     ...
 @end
 ```
