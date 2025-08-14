@@ -15,119 +15,119 @@ See README.md for documentation
 
 */
 
-typedef enum SC_OutputFormat {
-    SC_OUTPUT_FORMAT_SDL,
+typedef enum ShadOutputFormat {
+    SHAD_OUTPUT_FORMAT_SDL,
     /* Other rendering frameworks will be supported in the future */
-} SC_OutputFormat;
+} ShadOutputFormat;
 
-typedef char SC_Bool;
+typedef char ShadBool;
 
-typedef enum SC_VertexElementFormat {
-    SC_VERTEXELEMENTFORMAT_INVALID,
-    SC_VERTEXELEMENTFORMAT_INT,          /* @in int x; */
-    SC_VERTEXELEMENTFORMAT_INT2,         /* @in ivec2 x; */
-    SC_VERTEXELEMENTFORMAT_INT3,         /* @in ivec3 x; */
-    SC_VERTEXELEMENTFORMAT_INT4,         /* @in ivec4 x; */
-    SC_VERTEXELEMENTFORMAT_UINT,         /* @in uint x; */
-    SC_VERTEXELEMENTFORMAT_UINT2,        /* @in uvec2 x; */
-    SC_VERTEXELEMENTFORMAT_UINT3,        /* @in uvec3 x; */
-    SC_VERTEXELEMENTFORMAT_UINT4,        /* @in uvec4 x; */
-    SC_VERTEXELEMENTFORMAT_FLOAT,        /* @in float x; */
-    SC_VERTEXELEMENTFORMAT_FLOAT2,       /* @in vec2 x; */
-    SC_VERTEXELEMENTFORMAT_FLOAT3,       /* @in vec3 x; */
-    SC_VERTEXELEMENTFORMAT_FLOAT4,       /* @in vec4 x; */
-    SC_VERTEXELEMENTFORMAT_BYTE2,        /* @in(type=i8) ivec2 x; */
-    SC_VERTEXELEMENTFORMAT_BYTE4,        /* @in(type=i8) ivec4 x; */
-    SC_VERTEXELEMENTFORMAT_UBYTE2,       /* @in(type=u8) uvec2 x; */
-    SC_VERTEXELEMENTFORMAT_UBYTE4,       /* @in(type=u8) uvec4 x; */
-    SC_VERTEXELEMENTFORMAT_BYTE2_NORM,   /* @in(type=i8) vec2 x; */
-    SC_VERTEXELEMENTFORMAT_BYTE4_NORM,   /* @in(type=i8) vec4 x; */
-    SC_VERTEXELEMENTFORMAT_UBYTE2_NORM,  /* @in(type=u8) vec2 x; */
-    SC_VERTEXELEMENTFORMAT_UBYTE4_NORM,  /* @in(type=u8) vec4 x; */
-    SC_VERTEXELEMENTFORMAT_SHORT2,       /* @in(type=i16) ivec2 x; */
-    SC_VERTEXELEMENTFORMAT_SHORT4,       /* @in(type=i16) ivec4 x; */
-    SC_VERTEXELEMENTFORMAT_USHORT2,      /* @in(type=u16) uvec2 x; */
-    SC_VERTEXELEMENTFORMAT_USHORT4,      /* @in(type=u16) uvec4 x; */
-    SC_VERTEXELEMENTFORMAT_SHORT2_NORM,  /* @in(type=i16) vec2 x; */
-    SC_VERTEXELEMENTFORMAT_SHORT4_NORM,  /* @in(type=i16) vec4 x; */
-    SC_VERTEXELEMENTFORMAT_USHORT2_NORM, /* @in(type=u16) vec2 x; */
-    SC_VERTEXELEMENTFORMAT_USHORT4_NORM, /* @in(type=u16) vec4 x; */
-} SC_VertexElementFormat;
+typedef enum ShadVertexElementFormat {
+    SHAD_VERTEXELEMENTFORMAT_INVALID,
+    SHAD_VERTEXELEMENTFORMAT_INT,          /* @in int x; */
+    SHAD_VERTEXELEMENTFORMAT_INT2,         /* @in ivec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_INT3,         /* @in ivec3 x; */
+    SHAD_VERTEXELEMENTFORMAT_INT4,         /* @in ivec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_UINT,         /* @in uint x; */
+    SHAD_VERTEXELEMENTFORMAT_UINT2,        /* @in uvec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_UINT3,        /* @in uvec3 x; */
+    SHAD_VERTEXELEMENTFORMAT_UINT4,        /* @in uvec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_FLOAT,        /* @in float x; */
+    SHAD_VERTEXELEMENTFORMAT_FLOAT2,       /* @in vec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_FLOAT3,       /* @in vec3 x; */
+    SHAD_VERTEXELEMENTFORMAT_FLOAT4,       /* @in vec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_BYTE2,        /* @in(type=i8) ivec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_BYTE4,        /* @in(type=i8) ivec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_UBYTE2,       /* @in(type=u8) uvec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_UBYTE4,       /* @in(type=u8) uvec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_BYTE2_NORM,   /* @in(type=i8) vec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_BYTE4_NORM,   /* @in(type=i8) vec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_UBYTE2_NORM,  /* @in(type=u8) vec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_UBYTE4_NORM,  /* @in(type=u8) vec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_SHORT2,       /* @in(type=i16) ivec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_SHORT4,       /* @in(type=i16) ivec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_USHORT2,      /* @in(type=u16) uvec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_USHORT4,      /* @in(type=u16) uvec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_SHORT2_NORM,  /* @in(type=i16) vec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_SHORT4_NORM,  /* @in(type=i16) vec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_USHORT2_NORM, /* @in(type=u16) vec2 x; */
+    SHAD_VERTEXELEMENTFORMAT_USHORT4_NORM, /* @in(type=u16) vec4 x; */
+} ShadVertexElementFormat;
 
-typedef enum SC_BlendFactor {
-    SC_BLEND_FACTOR_INVALID,
-    SC_BLEND_FACTOR_ZERO,
-    SC_BLEND_FACTOR_ONE,
-    SC_BLEND_FACTOR_SRC_COLOR,
-    SC_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
-    SC_BLEND_FACTOR_DST_COLOR,
-    SC_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
-    SC_BLEND_FACTOR_SRC_ALPHA,
-    SC_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-    SC_BLEND_FACTOR_DST_ALPHA,
-    SC_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
-    SC_BLEND_FACTOR_CONSTANT_COLOR,
-    SC_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
-    SC_BLEND_FACTOR_SRC_ALPHA_SATURATE,
-} SC_BlendFactor;
+typedef enum ShadBlendFactor {
+    SHAD_BLEND_FACTOR_INVALID,
+    SHAD_BLEND_FACTOR_ZERO,
+    SHAD_BLEND_FACTOR_ONE,
+    SHAD_BLEND_FACTOR_SRC_COLOR,
+    SHAD_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+    SHAD_BLEND_FACTOR_DST_COLOR,
+    SHAD_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+    SHAD_BLEND_FACTOR_SRC_ALPHA,
+    SHAD_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    SHAD_BLEND_FACTOR_DST_ALPHA,
+    SHAD_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+    SHAD_BLEND_FACTOR_CONSTANT_COLOR,
+    SHAD_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
+    SHAD_BLEND_FACTOR_SRC_ALPHA_SATURATE,
+} ShadBlendFactor;
 
-typedef enum SC_BlendOp {
-    SC_BLEND_OP_INVALID,
-    SC_BLEND_OP_ADD,          /* add */
-    SC_BLEND_OP_SUBTRACT,     /* subtract */
-    SC_BLEND_OP_REV_SUBTRACT, /* rev_subtract */
-    SC_BLEND_OP_MIN,          /* min */
-    SC_BLEND_OP_MAX,          /* max */
-} SC_BlendOp;
+typedef enum ShadBlendOp {
+    SHAD_BLEND_OP_INVALID,
+    SHAD_BLEND_OP_ADD,          /* add */
+    SHAD_BLEND_OP_SUBTRACT,     /* subtract */
+    SHAD_BLEND_OP_REV_SUBTRACT, /* rev_subtract */
+    SHAD_BLEND_OP_MIN,          /* min */
+    SHAD_BLEND_OP_MAX,          /* max */
+} ShadBlendOp;
 
-typedef enum SC_CullMode {
-    SC_CULL_MODE_INVALID,
-    SC_CULL_MODE_NONE, /* none */
-    SC_CULL_MODE_FRONT,/* front */
-    SC_CULL_MODE_BACK, /* back */
-} SC_CullMode;
+typedef enum ShadCullMode {
+    SHAD_CULL_MODE_INVALID,
+    SHAD_CULL_MODE_NONE, /* none */
+    SHAD_CULL_MODE_FRONT,/* front */
+    SHAD_CULL_MODE_BACK, /* back */
+} ShadCullMode;
 
-typedef enum SC_CompareOp {
-    SC_COMPARE_OP_INVALID,
-    SC_COMPARE_OP_NEVER,             /* never */
-    SC_COMPARE_OP_LESS,              /* less */
-    SC_COMPARE_OP_EQUAL,             /* equal */
-    SC_COMPARE_OP_LESS_OR_EQUAL,     /* less_or_equal */
-    SC_COMPARE_OP_GREATER,           /* greater */
-    SC_COMPARE_OP_NOT_EQUAL,         /* not_equal */
-    SC_COMPARE_OP_GREATER_OR_EQUAL,  /* greater_or_equal */
-    SC_COMPARE_OP_ALWAYS,            /* always */
-} SC_CompareOp;
+typedef enum ShadCompareOp {
+    SHAD_COMPARE_OP_INVALID,
+    SHAD_COMPARE_OP_NEVER,             /* never */
+    SHAD_COMPARE_OP_LESS,              /* less */
+    SHAD_COMPARE_OP_EQUAL,             /* equal */
+    SHAD_COMPARE_OP_LESS_OR_EQUAL,     /* less_or_equal */
+    SHAD_COMPARE_OP_GREATER,           /* greater */
+    SHAD_COMPARE_OP_NOT_EQUAL,         /* not_equal */
+    SHAD_COMPARE_OP_GREATER_OR_EQUAL,  /* greater_or_equal */
+    SHAD_COMPARE_OP_ALWAYS,            /* always */
+} ShadCompareOp;
 
-typedef enum SC_TextureFormat {
-    SC_TEXTURE_FORMAT_INVALID,
-    SC_TEXTURE_FORMAT_R8,         /* @out(format=r8) float x; */
-    SC_TEXTURE_FORMAT_RG8,        /* @out(format=rg8) vec2 x; */
-    SC_TEXTURE_FORMAT_RGBA8,      /* @out(format=rgba8) vec4 x; */
-    SC_TEXTURE_FORMAT_R16,        /* @out(format=r16) float x; */
-    SC_TEXTURE_FORMAT_RG16,       /* @out(format=rg16) vec2 x; */
-    SC_TEXTURE_FORMAT_RGBA16,     /* @out(format=rgba16) vec4 x; */
-    SC_TEXTURE_FORMAT_R16F,       /* @out(format=r16f) float x; */
-    SC_TEXTURE_FORMAT_RG16F,      /* @out(format=rg16f) vec2 x; */
-    SC_TEXTURE_FORMAT_RGBA16F,    /* @out(format=rgba16f) vec4 x; */
-    SC_TEXTURE_FORMAT_R32F,       /* @out(format=r32f) float x; */
-    SC_TEXTURE_FORMAT_RG32F,      /* @out(format=rg32f) vec2 x; */
-    SC_TEXTURE_FORMAT_RGBA32F,    /* @out(format=rgba32f) vec4 x; */
-    SC_TEXTURE_FORMAT_R11G11B10F, /* @out(format=r11g11b10f) vec3 x; */
-    SC_TEXTURE_FORMAT_D16,        /* @depth less write d16 clip */
-    SC_TEXTURE_FORMAT_D24,        /* @depth less write d24 clip */
-    SC_TEXTURE_FORMAT_D32F,       /* @depth less write d32f clip */
-    SC_TEXTURE_FORMAT_D24_S8,     /* @depth less write d24_s8 clip */
-    SC_TEXTURE_FORMAT_D32F_S8,    /* @depth less write d32f_s8 clip */
-} SC_TextureFormat;
+typedef enum ShadTextureFormat {
+    SHAD_TEXTURE_FORMAT_INVALID,
+    SHAD_TEXTURE_FORMAT_R8,         /* @out(format=r8) float x; */
+    SHAD_TEXTURE_FORMAT_RG8,        /* @out(format=rg8) vec2 x; */
+    SHAD_TEXTURE_FORMAT_RGBA8,      /* @out(format=rgba8) vec4 x; */
+    SHAD_TEXTURE_FORMAT_R16,        /* @out(format=r16) float x; */
+    SHAD_TEXTURE_FORMAT_RG16,       /* @out(format=rg16) vec2 x; */
+    SHAD_TEXTURE_FORMAT_RGBA16,     /* @out(format=rgba16) vec4 x; */
+    SHAD_TEXTURE_FORMAT_R16F,       /* @out(format=r16f) float x; */
+    SHAD_TEXTURE_FORMAT_RG16F,      /* @out(format=rg16f) vec2 x; */
+    SHAD_TEXTURE_FORMAT_RGBA16F,    /* @out(format=rgba16f) vec4 x; */
+    SHAD_TEXTURE_FORMAT_R32F,       /* @out(format=r32f) float x; */
+    SHAD_TEXTURE_FORMAT_RG32F,      /* @out(format=rg32f) vec2 x; */
+    SHAD_TEXTURE_FORMAT_RGBA32F,    /* @out(format=rgba32f) vec4 x; */
+    SHAD_TEXTURE_FORMAT_R11G11B10F, /* @out(format=r11g11b10f) vec3 x; */
+    SHAD_TEXTURE_FORMAT_D16,        /* @depth less write d16 clip */
+    SHAD_TEXTURE_FORMAT_D24,        /* @depth less write d24 clip */
+    SHAD_TEXTURE_FORMAT_D32F,       /* @depth less write d32f clip */
+    SHAD_TEXTURE_FORMAT_D24_S8,     /* @depth less write d24_s8 clip */
+    SHAD_TEXTURE_FORMAT_D32F_S8,    /* @depth less write d32f_s8 clip */
+} ShadTextureFormat;
 
-typedef struct SC_CodeLocation {
+typedef struct ShadCodeLocation {
     char *path;
     char *start;
     char *pos;
-} SC_CodeLocation;
+} ShadCodeLocation;
 
-typedef struct SC_VertexInput {
+typedef struct ShadVertexInput {
     /* example:
     *
     * @in(type=u8, buffer=3) vec4 rgb;
@@ -137,48 +137,48 @@ typedef struct SC_VertexInput {
     *   data_type = vec4
     *   name = rgb
     *   buffer_slot = 3
-    *   format = SC_VERTEXELEMENTFORMAT_UBYTE4_NORM
+    *   format = SHAD_VERTEXELEMENTFORMAT_UBYTE4_NORM
     *
     */
-    SC_CodeLocation code_location;
+    ShadCodeLocation code_location;
     char *component_type;
     char *data_type;
     char *name;
-    SC_VertexElementFormat format;
+    ShadVertexElementFormat format;
     int buffer_slot;
     int size;
     int align;
     int offset;
-    SC_Bool is_flat;
-    SC_Bool instanced;
-} SC_VertexInput;
+    ShadBool is_flat;
+    ShadBool instanced;
+} ShadVertexInput;
 
-typedef struct SC_FragmentOutput {
-    SC_CodeLocation code_location;
-    SC_TextureFormat format;
+typedef struct ShadFragmentOutput {
+    ShadCodeLocation code_location;
+    ShadTextureFormat format;
 
     /* blending */
-    SC_CodeLocation blend_code_location;
-    SC_BlendFactor blend_src;
-    SC_BlendFactor blend_dst;
-    SC_BlendOp blend_op;
-} SC_FragmentOutput;
+    ShadCodeLocation blend_code_location;
+    ShadBlendFactor blend_src;
+    ShadBlendFactor blend_dst;
+    ShadBlendOp blend_op;
+} ShadFragmentOutput;
 
-typedef struct SC_VertexInputBuffer {
+typedef struct ShadVertexInputBuffer {
     int slot;
-    SC_Bool instanced;
+    ShadBool instanced;
     int stride;
-} SC_VertexInputBuffer;
+} ShadVertexInputBuffer;
 
-typedef struct SC_Result {
+typedef struct ShadResult {
     /* vertex shader info */
     char *vertex_code;
     size_t vertex_code_size;
     uint32_t *spirv_vertex_code;
     size_t spirv_vertex_code_size;
-    SC_VertexInput *vertex_inputs;
+    ShadVertexInput *vertex_inputs;
     int num_vertex_inputs;
-    SC_VertexInputBuffer *vertex_input_buffers;
+    ShadVertexInputBuffer *vertex_input_buffers;
     int num_vertex_input_buffers;
     int num_vertex_outputs;
     int num_vertex_samplers;
@@ -187,12 +187,12 @@ typedef struct SC_Result {
     int num_vertex_uniforms;
 
     /* fragment shader info */
-    SC_Bool has_fragment_shader;
+    ShadBool has_fragment_shader;
     char *fragment_code;
     size_t fragment_code_size;
     uint32_t *spirv_fragment_code;
     size_t spirv_fragment_code_size;
-    SC_FragmentOutput *fragment_outputs;
+    ShadFragmentOutput *fragment_outputs;
     int num_fragment_outputs;
     int num_fragment_samplers;
     int num_fragment_images;
@@ -200,27 +200,27 @@ typedef struct SC_Result {
     int num_fragment_uniforms;
 
     /* depth */
-    SC_CodeLocation depth_code_location;
-    SC_Bool depth_write;
-    SC_CompareOp depth_cmp;
-    SC_TextureFormat depth_format;
-    SC_Bool depth_clip;
+    ShadCodeLocation depth_code_location;
+    ShadBool depth_write;
+    ShadCompareOp depth_cmp;
+    ShadTextureFormat depth_format;
+    ShadBool depth_clip;
 
     /* culling */
-    SC_CodeLocation cull_code_location;
-    SC_CullMode cull_mode;
+    ShadCodeLocation cull_code_location;
+    ShadCullMode cull_mode;
 
     /* multisampling. Valid values are 1,2,4,8 */
     int multisample_count;
 
     /* private stuff */
     void *arena;
-} SC_Result;
+} ShadResult;
 
-/* Returns 1 on success, 0 on failure. Call sc_result_free() to free result */
-SC_Bool sc_compile(const char *path, SC_OutputFormat output_format, SC_Result *result);
+/* Returns 1 on success, 0 on failure. Call shad_result_free() to free result */
+ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResult *result);
 /* Free the result */
-void sc_result_free(SC_Result*);
+void shad_result_free(ShadResult*);
 
 #ifdef SDL_VERSION
 
@@ -228,18 +228,18 @@ void sc_result_free(SC_Result*);
 
 Fills SDL_GPU*CreateInfo structs with settings from the shader.
 
-NOTE: Any arrays that have to be allocated to fill the info structs will be bound to SC_Result,
-      and will be destroyed when you call sc_result_free().
-      In short, only call sc_result_free() once you are done with the create info structs.
+NOTE: Any arrays that have to be allocated to fill the info structs will be bound to ShadResult,
+      and will be destroyed when you call shad_result_free().
+      In short, only call shad_result_free() once you are done with the create info structs.
 
 NOTE: These functions will memzero the structs, so if you want to override some settings
       you must do so _after_ the call.
 
 */
 
-void sc_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, SC_Result *sc);
-void sc_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, SC_Result *sc);
-void sc_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, SC_Result *sc);
+void shad_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, ShadResult *sc);
+void shad_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, ShadResult *sc);
+void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResult *sc);
 #endif
 
 #endif /* CM_SHADER_H */

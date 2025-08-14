@@ -7,8 +7,8 @@
 
 int main(int argc, char const *argv[]) {
     /* compile shader */
-    SC_Result sc;
-    sc_compile("triangle.shader", SC_OUTPUT_FORMAT_SDL, &sc);
+    SHAD_Result sc;
+    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
 
     /* SDL initialization */
     SDL_Init(SDL_INIT_VIDEO);
@@ -16,14 +16,14 @@ int main(int argc, char const *argv[]) {
 
     /* SDL shader creation */
     SDL_GPUShaderCreateInfo vsinfo, fsinfo;
-    sc_sdl_prefill_vertex_shader(&vsinfo, &sc);
-    sc_sdl_prefill_fragment_shader(&fsinfo, &sc);
+    shad_sdl_prefill_vertex_shader(&vsinfo, &sc);
+    shad_sdl_prefill_fragment_shader(&fsinfo, &sc);
     SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &vsinfo);
     SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &fsinfo);
 
     /* SDL pipeline creation */
     SDL_GPUGraphicsPipelineCreateInfo pinfo;
-    sc_sdl_prefill_pipeline(&pinfo, &sc);
+    shad_sdl_prefill_pipeline(&pinfo, &sc);
     pinfo.vertex_shader = vshader;
     pinfo.fragment_shader = fshader;
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
