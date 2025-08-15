@@ -1099,8 +1099,6 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
 
 #endif /* SHAD_COMPILER */
 
-/* Build time API */
-
 void shad__serialize_spirv_to_code(ShadWriter *w, uint32_t *spirv, int spirv_size) {
     assert(spirv_size % 4 == 0);
     for (int i = 0; i < spirv_size/4; ++i) {
@@ -1284,82 +1282,87 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
     ShadArena tmp = {0};
     ShadWriter writer = {&tmp};
 
+    #define SHAD_WRITE_N(ptr, size) shad__writer_push(&writer, (char*)(ptr), size);
+    #define SHAD_WRITE(ptr) SHAD_WRITE_N(ptr, sizeof(*(ptr)))
+
     size_t name_len = strlen(compiled->name);
-    shad__writer_push(&writer, (char*)&name_len, sizeof(name_len));
-    shad__writer_push(&writer, (char*)compiled->name, name_len);
+    SHAD_WRITE(&name_len);
+    SHAD_WRITE_N(compiled->name, name_len);
 
     /* vertex shader info */
-    shad__writer_push(&writer, (char*)&compiled->vertex_code_size, sizeof(compiled->vertex_code_size));
-    shad__writer_push(&writer, (char*)compiled->vertex_code, compiled->vertex_code_size);
-    shad__writer_push(&writer, (char*)&compiled->spirv_vertex_code_size, sizeof(compiled->spirv_vertex_code_size));
-    shad__writer_push(&writer, (char*)compiled->spirv_vertex_code, compiled->spirv_vertex_code_size);
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_inputs, sizeof(compiled->num_vertex_inputs));
+    SHAD_WRITE(&compiled->spirv_vertex_code_size);
+    SHAD_WRITE_N(compiled->spirv_vertex_code, compiled->spirv_vertex_code_size);
+    SHAD_WRITE(&compiled->num_vertex_inputs);
     for (int i = 0; i < compiled->num_vertex_inputs; ++i) {
-        shad__writer_push(&writer, (char*)&compiled->vertex_inputs[i].format, sizeof(compiled->vertex_inputs[i].format));
-        shad__writer_push(&writer, (char*)&compiled->vertex_inputs[i].buffer_slot, sizeof(compiled->vertex_inputs[i].buffer_slot));
-        shad__writer_push(&writer, (char*)&compiled->vertex_inputs[i].offset, sizeof(compiled->vertex_inputs[i].offset));
-        shad__writer_push(&writer, (char*)&compiled->vertex_inputs[i].instanced, sizeof(compiled->vertex_inputs[i].instanced));
+        SHAD_WRITE(&compiled->vertex_inputs[i].format);
+        SHAD_WRITE(&compiled->vertex_inputs[i].buffer_slot);
+        SHAD_WRITE(&compiled->vertex_inputs[i].offset);
+        SHAD_WRITE(&compiled->vertex_inputs[i].instanced);
     }
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_input_buffers, sizeof(compiled->num_vertex_input_buffers));
+    SHAD_WRITE(&compiled->num_vertex_input_buffers);
     for (int i = 0; i < compiled->num_vertex_input_buffers; ++i) {
-        shad__writer_push(&writer, (char*)&compiled->vertex_input_buffers[i].slot, sizeof(compiled->vertex_input_buffers[i].slot));
-        shad__writer_push(&writer, (char*)&compiled->vertex_input_buffers[i].instanced, sizeof(compiled->vertex_input_buffers[i].instanced));
-        shad__writer_push(&writer, (char*)&compiled->vertex_input_buffers[i].stride, sizeof(compiled->vertex_input_buffers[i].stride));
+        SHAD_WRITE(&compiled->vertex_input_buffers[i].slot);
+        SHAD_WRITE(&compiled->vertex_input_buffers[i].instanced);
+        SHAD_WRITE(&compiled->vertex_input_buffers[i].stride);
     }
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_input_buffers, sizeof(compiled->num_vertex_input_buffers));
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_outputs, sizeof(compiled->num_vertex_outputs));
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_samplers, sizeof(compiled->num_vertex_samplers));
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_images, sizeof(compiled->num_vertex_images));
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_buffers, sizeof(compiled->num_vertex_buffers));
-    shad__writer_push(&writer, (char*)&compiled->num_vertex_uniforms, sizeof(compiled->num_vertex_uniforms));
+    SHAD_WRITE(&compiled->num_vertex_input_buffers);
+    SHAD_WRITE(&compiled->num_vertex_outputs);
+    SHAD_WRITE(&compiled->num_vertex_samplers);
+    SHAD_WRITE(&compiled->num_vertex_images);
+    SHAD_WRITE(&compiled->num_vertex_buffers);
+    SHAD_WRITE(&compiled->num_vertex_uniforms);
 
     /* fragment shader info */
-    shad__writer_push(&writer, (char*)&compiled->fragment_code_size, sizeof(compiled->fragment_code_size));
-    shad__writer_push(&writer, (char*)compiled->fragment_code, compiled->fragment_code_size);
-    shad__writer_push(&writer, (char*)&compiled->spirv_fragment_code_size, sizeof(compiled->spirv_fragment_code_size));
-    shad__writer_push(&writer, (char*)compiled->spirv_fragment_code, compiled->spirv_fragment_code_size);
-    shad__writer_push(&writer, (char*)&compiled->num_fragment_outputs, sizeof(compiled->num_fragment_outputs));
+    SHAD_WRITE(&compiled->has_fragment_shader);
+    SHAD_WRITE(&compiled->spirv_fragment_code_size);
+    SHAD_WRITE_N(compiled->spirv_fragment_code, compiled->spirv_fragment_code_size);
+    SHAD_WRITE(&compiled->num_fragment_outputs);
     for (int i = 0; i < compiled->num_fragment_outputs; ++i) {
-        shad__writer_push(&writer, (char*)&compiled->fragment_outputs[i].format, sizeof(compiled->fragment_outputs[i].format));
-        shad__writer_push(&writer, (char*)&compiled->fragment_outputs[i].blend_src, sizeof(compiled->fragment_outputs[i].blend_src));
-        shad__writer_push(&writer, (char*)&compiled->fragment_outputs[i].blend_dst, sizeof(compiled->fragment_outputs[i].blend_dst));
-        shad__writer_push(&writer, (char*)&compiled->fragment_outputs[i].blend_op, sizeof(compiled->fragment_outputs[i].blend_op));
+        SHAD_WRITE(&compiled->fragment_outputs[i].format);
+        SHAD_WRITE(&compiled->fragment_outputs[i].blend_src);
+        SHAD_WRITE(&compiled->fragment_outputs[i].blend_dst);
+        SHAD_WRITE(&compiled->fragment_outputs[i].blend_op);
     }
-    shad__writer_push(&writer, (char*)&compiled->num_fragment_samplers, sizeof(compiled->num_fragment_samplers));
-    shad__writer_push(&writer, (char*)&compiled->num_fragment_images, sizeof(compiled->num_fragment_images));
-    shad__writer_push(&writer, (char*)&compiled->num_fragment_buffers, sizeof(compiled->num_fragment_buffers));
-    shad__writer_push(&writer, (char*)&compiled->num_fragment_uniforms, sizeof(compiled->num_fragment_uniforms));
+    SHAD_WRITE(&compiled->num_fragment_samplers);
+    SHAD_WRITE(&compiled->num_fragment_images);
+    SHAD_WRITE(&compiled->num_fragment_buffers);
+    SHAD_WRITE(&compiled->num_fragment_uniforms);
 
     /* depth */
-    shad__writer_push(&writer, (char*)&compiled->depth_write, sizeof(compiled->depth_write));
-    shad__writer_push(&writer, (char*)&compiled->depth_cmp, sizeof(compiled->depth_cmp));
-    shad__writer_push(&writer, (char*)&compiled->depth_format, sizeof(compiled->depth_format));
-    shad__writer_push(&writer, (char*)&compiled->depth_clip, sizeof(compiled->depth_clip));
+    SHAD_WRITE(&compiled->depth_write);
+    SHAD_WRITE(&compiled->depth_cmp);
+    SHAD_WRITE(&compiled->depth_format);
+    SHAD_WRITE(&compiled->depth_clip);
 
     /* culling */
-    shad__writer_push(&writer, (char*)&compiled->cull_mode, sizeof(compiled->cull_mode));
+    SHAD_WRITE(&compiled->cull_mode);
 
     /* multisampling. Valid values are 1,2,4,8 */
-    shad__writer_push(&writer, (char*)&compiled->multisample_count, sizeof(compiled->multisample_count));
+    SHAD_WRITE(&compiled->multisample_count);
 
     /* copy out result */
     char *result = (char*)malloc(writer.len+1);
     memcpy(result, writer.buf, writer.len+1);
     *bytes_out = result;
-    *num_bytes_out = (size_t)writer.len+1;
+    *num_bytes_out = (size_t)writer.len;
 
     /* destroy arena */
     shad__arena_destroy(&tmp);
     return;
+
+    #undef SHAD_WRITE_N
+    #undef SHAD_WRITE
 }
 
 ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
+    memset(compiled, 0, sizeof(*compiled));
+
     ShadArena arena = {0};
     int num_bytes_remaining = (int)num_bytes;
 
     #define SHAD_READ_N(ptr, size) do { \
         size_t s = size; \
-        if (num_bytes_remaining < s) return 0; \
+        if (num_bytes_remaining < s) goto err; \
         memcpy(ptr, bytes, s); \
         bytes += s; \
         num_bytes_remaining -= s; \
@@ -1368,12 +1371,11 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
 
     size_t name_len;
     SHAD_READ(&name_len);
+    compiled->name = SHAD_ALLOC(char, &arena, name_len+1);
     SHAD_READ_N(compiled->name, name_len);
+    compiled->name[name_len] = 0;
 
     /* vertex shader info */
-    SHAD_READ(&compiled->vertex_code_size);
-    compiled->vertex_code = SHAD_ALLOC(char, &arena, compiled->vertex_code_size);
-    SHAD_READ_N(compiled->vertex_code, compiled->vertex_code_size);
     SHAD_READ(&compiled->spirv_vertex_code_size);
     compiled->spirv_vertex_code = SHAD_ALLOC(uint32_t, &arena, compiled->spirv_vertex_code_size/4);
     SHAD_READ_N(compiled->spirv_vertex_code, compiled->spirv_vertex_code_size);
@@ -1400,9 +1402,7 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
     SHAD_READ(&compiled->num_vertex_uniforms);
 
     /* fragment shader info */
-    SHAD_READ(&compiled->fragment_code_size);
-    compiled->fragment_code = SHAD_ALLOC(char, &arena, compiled->fragment_code_size);
-    SHAD_READ_N(compiled->fragment_code, compiled->fragment_code_size);
+    SHAD_READ(&compiled->has_fragment_shader);
     SHAD_READ(&compiled->spirv_fragment_code_size);
     compiled->spirv_fragment_code = SHAD_ALLOC(uint32_t, &arena, compiled->spirv_fragment_code_size/4);
     SHAD_READ_N(compiled->spirv_fragment_code, compiled->spirv_fragment_code_size);
@@ -1431,13 +1431,17 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
     /* multisampling. Valid values are 1,2,4,8 */
     SHAD_READ(&compiled->multisample_count);
 
-    if (num_bytes_remaining) return 0;
+    if (num_bytes_remaining) goto err;
 
     ShadArena *arena_on_heap = SHAD_ALLOC(ShadArena, &arena, 1);
     *arena_on_heap = arena;
     compiled->arena = arena_on_heap;
 
     return 1;
+
+    err:
+    shad__arena_destroy(&arena);
+    return 0;
 
     #undef SHAD_READ
     #undef SHAD_READ_N

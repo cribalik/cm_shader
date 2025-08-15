@@ -225,7 +225,26 @@ typedef struct ShadResult {
     /* private stuff */
     void *arena;
 } ShadResult;
+
+/* Free a compilation result */
 void shad_result_free(ShadResult*);
+/*
+    Serialize a compilation into C code to include into your project.
+    The C code will be of the format:
+        static const ShadResult shad_result_<name_of_file_without_extension>;
+*/
+void shad_serialize_to_c(const ShadResult *result, char **code_out, size_t *num_bytes_out);
+/*
+    Serialize a compilation into a binary format.
+    Deserialize with shad_deserialize()
+    Free the result with shad_free()
+*/
+void shad_serialize(const ShadResult *result, char **bytes_out, size_t *num_bytes_out);
+/*
+    Deserialize bytes that were serialized with shad_serialize()
+*/
+ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *result);
+void shad_free(void*);
 
 /*******
 
@@ -240,26 +259,6 @@ void shad_result_free(ShadResult*);
 
 /* Returns 1 on success, 0 on failure. Call shad_result_free() to free result */
 ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResult *result);
-
-/*
-    Serialize a compilation into C code to include into your project.
-    The C code will be of the format:
-        static const ShadResult shad_result_<name_of_file_without_extension>;
-*/
-void shad_serialize_to_c(const ShadResult *result, char **code_out, size_t *num_bytes_out);
-
-/*
-    Serialize a compilation into a binary format.
-    Deserialize with shad_deserialize()
-    Free the result with shad_free()
-*/
-void shad_serialize(const ShadResult *result, char **bytes_out, size_t *num_bytes_out);
-
-/*
-    Deserialize bytes that were serialized with shad_serialize()
-*/
-ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *result);
-void shad_free(void*);
 
 #endif /* SHAD_COMPILER */
 
