@@ -9,7 +9,7 @@ int main(int argc, char const *argv[]) {
     ShadResult sc;
     shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
 
-    /* serialize to C code */
+    /* serialize to binary */
     char *bytes;
     size_t bytes_len;
     shad_serialize(&sc, &bytes, &bytes_len);
