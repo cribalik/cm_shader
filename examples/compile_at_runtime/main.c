@@ -1,5 +1,9 @@
-#include <stdio.h>
 #include <SDL3/SDL.h>
+
+/* required to include shad_compile() */
+#define SHAD_COMPILER
+/* required to include shad_sdl_prefill*() functions */
+#define SHAD_RUNTIME
 #include "cm_shader.h"
 #include "cm_shader.c"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -27,6 +31,9 @@ int main(int argc, char const *argv[]) {
     pinfo.vertex_shader = vshader;
     pinfo.fragment_shader = fshader;
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
+
+    /* we're done with the shader compilation result, we can free it */
+    shad_result_free(&sc);
 
     /* SDL texture creation */
     SDL_GPUTextureCreateInfo tinfo = {0};
@@ -71,5 +78,6 @@ int main(int argc, char const *argv[]) {
     /* write result to bitmap */
     void *data = SDL_MapGPUTransferBuffer(device, transfer_buffer, 0);
     stbi_write_bmp("output.bmp", tinfo.width, tinfo.height, 4, data);
+
     return 0;
 }

@@ -15,12 +15,18 @@ See README.md for documentation
 
 */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum ShadOutputFormat {
     SHAD_OUTPUT_FORMAT_SDL,
     /* Other rendering frameworks will be supported in the future */
 } ShadOutputFormat;
 
 typedef char ShadBool;
+#define ShadFalse 0
+#define ShadTrue 1
 
 typedef enum ShadVertexElementFormat {
     SHAD_VERTEXELEMENTFORMAT_INVALID,
@@ -171,6 +177,9 @@ typedef struct ShadVertexInputBuffer {
 } ShadVertexInputBuffer;
 
 typedef struct ShadResult {
+    /* the name of the file without extension */
+    char *name;
+
     /* vertex shader info */
     char *vertex_code;
     size_t vertex_code_size;
@@ -216,11 +225,59 @@ typedef struct ShadResult {
     /* private stuff */
     void *arena;
 } ShadResult;
+void shad_result_free(ShadResult*);
+
+/*******
+
+    Compilation API
+
+    Use this API to compile shaders. Can be done as a build step or at runtime.
+    Requires linking with Vulkan (glslang specifically)
+
+*******/
+
+#ifdef SHAD_COMPILER
 
 /* Returns 1 on success, 0 on failure. Call shad_result_free() to free result */
 ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResult *result);
-/* Free the result */
-void shad_result_free(ShadResult*);
+
+/*
+    Serialize a compilation into C code to include into your project.
+    The C code will be of the format:
+        static const ShadResult shad_result_<name_of_file_without_extension>;
+*/
+void shad_serialize_to_c(const ShadResult *result, char **code_out, size_t *num_bytes_out);
+
+/*
+    Serialize a compilation into a binary format.
+    Deserialize with shad_deserialize()
+    Free the result with shad_free()
+*/
+void shad_serialize(const ShadResult *result, char **bytes_out, size_t *num_bytes_out);
+
+/*
+    Deserialize bytes that were serialized with shad_serialize()
+*/
+ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *result);
+void shad_free(void*);
+
+#endif /* SHAD_COMPILER */
+
+/*******
+
+    Runtime API
+
+    Use this API to create GPU Shaders and Pipelines at runtime.
+    Doesn't require linking to anything
+    You can either serialize to binary representation, or to C code for compiling into your project.
+
+*******/
+
+#ifdef SHAD_RUNTIME
+
+/*****
+  SDL implementation
+ *****/
 
 #ifdef SDL_VERSION
 
@@ -237,9 +294,16 @@ NOTE: These functions will memzero the structs, so if you want to override some 
 
 */
 
-void shad_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, ShadResult *sc);
-void shad_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, ShadResult *sc);
-void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResult *sc);
+void shad_sdl_prefill_vertex_shader(struct SDL_GPUShaderCreateInfo *info, ShadResult *sc);
+void shad_sdl_prefill_fragment_shader(struct SDL_GPUShaderCreateInfo *info, ShadResult *sc);
+void shad_sdl_prefill_pipeline(struct SDL_GPUGraphicsPipelineCreateInfo *info, ShadResult *sc);
+
+#endif /* SDL_VERSION */
+
+#endif /* SHAD_RUNTIME*/
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* CM_SHADER_H */
