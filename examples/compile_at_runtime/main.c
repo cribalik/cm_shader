@@ -4,7 +4,7 @@
 #define SHAD_COMPILER
 /* required to include shad_sdl_prefill*() functions */
 #define SHAD_RUNTIME
-#include "cm_shader.h"
+#include "shad.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -81,4 +81,4 @@ int main(int argc, char const *argv[]) {
     return 0;
 }
 
-#include "cm_shader.c"
+#include "shad.c"

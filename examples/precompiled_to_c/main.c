@@ -1,8 +1,8 @@
 #include <SDL3/SDL.h>
 /* required to include shad_sdl_prefill*() functions */
 #define SHAD_RUNTIME
-#include "cm_shader.h"
-#include "cm_shader.c"
+#include "shad.h"
+#include "shad.c"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 

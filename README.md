@@ -35,7 +35,7 @@
 ```c++
 /* your C/C++ code */
 #include <SDL3/SDL.h>
-#include "cm_shader.h"
+#include "shad.h"
 
 void func() {
     /* Compile shader */
@@ -60,7 +60,7 @@ void func() {
     shad_result_free(&sc);
 }
 
-#include "cm_shader.c"
+#include "shad.c"
 ```
 
 Full example under `examples/sdl_example.c`
@@ -85,14 +85,14 @@ Very soon there will be an API to serialize the compilation result into either b
 
 `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
 
-## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
+## 2. Include `shad.h` and `shad.c` into your project.
 
-`cm_shader.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
+`shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
 
 ```c++
-#include "cm_shader.h"
+#include "shad.h"
 /* your code */
-#include "cm_shader.c"
+#include "shad.c"
 ```
 
 # Documentation

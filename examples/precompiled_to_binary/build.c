@@ -1,6 +1,6 @@
 /* required to include shad_compile() and serialization functions */
 #define SHAD_COMPILER
-#include "cm_shader.h"
+#include "shad.h"
 
 #include <stdio.h>
 
@@ -26,4 +26,4 @@ int main(int argc, char const *argv[]) {
     return 0;
 }
 
-#include "cm_shader.c"
+#include "shad.c"

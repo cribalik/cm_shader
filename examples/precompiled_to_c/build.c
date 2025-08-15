@@ -1,7 +1,7 @@
 /* required to include shad_compile() and serialization functions */
 #define SHAD_COMPILER
-#include "cm_shader.h"
-#include "cm_shader.c"
+#include "shad.h"
+#include "shad.c"
 
 #include <stdio.h>
 

@@ -1,5 +1,7 @@
-#include "cm_shader.h"
-#include "cm_shader.c"
+#define SHAD_COMPILER
+#define SHAD_RUNTIME
+#include "shad.h"
+#include "shad.c"
 #include <assert.h>
 
 int main(int argc, char const *argv[]) {
