@@ -7,8 +7,8 @@
 
 # Example
 
+## Shader code
 ```glsl
-/* triangle.shader */
 @blend src_alpha one_minus_src_alpha add
 @cull front
 
@@ -32,9 +32,13 @@
 @end
 ```
 
+## Compiling at runtime
+
 ```c++
 /* your C/C++ code */
 #include <SDL3/SDL.h>
+#define SHAD_COMPILER
+#define SHAD_RUNTIME
 #include "cm_shader.h"
 
 void func() {
@@ -63,25 +67,54 @@ void func() {
 #include "cm_shader.c"
 ```
 
-Full example under `examples/sdl_example.c`
+## Precompiling at build time
+
+```c++
+/* at build time */
+#define SHAD_COMPILER
+#include "cm_shader.h"
+void compile() {
+    ShadResult sc;
+    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
+
+    char *c_code;
+    size_t c_code_len;
+    shad_serialize_to_c(&sc, &c_code, &c_code_len);
+    write_to_file("triangle_shader.h", c_code, c_code_len);
+}
+#include "cm_shader.c"
+```
+
+```c++
+/* in your app */
+#define SHAD_RUNTIME
+#include "cm_shader.h"
+#include "triangle_shader.h"
+void run() {
+    ShadResult *sc = shad_result_triangle(); /* this exists in triangle_shader.h */
+    /* use sc */
+    sc_result_free(sc);
+}
+#include "cm_shader.c"
+```
+
+Find complete examples under `examples`.
 
 # State of project
 
-**NOTE:**
-Currently you have to compile the shaders at runtime or manually serialize the compilation result to object to precompile shaders.
-Very soon there will be an API to serialize the compilation result into either binary or C code so that you can precompile the shaders at build time and only have to load bytes at runtime.
-
+Completed:
 - [x] Support Windows
-- [ ] Support Linux
-- [ ] Support Mac
 - [x] Support Vulkan (SPIRV)
-- [ ] Support D3D12
-- [ ] Support Metal
-- [ ] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
+- [x] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
+
+TODO:
+- [ ] Make a command line tool for precompiling shaders
+- [ ] Support compiling to D3D12
+- [ ] Support Linux
 
 # Build
 
-## 1. Link the Vulkan SDK.
+## 1. Link the Vulkan SDK (only required for `shad_compile()`)
 
 `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
 
@@ -97,7 +130,17 @@ Very soon there will be an API to serialize the compilation result into either b
 
 # Documentation
 
-## Settings
+## Compiling versus Runtime
+
+There are two aspects to the library - compiling the shaders to generate SPIRV and reflection data, and actually applying that information to the SDL creation structs.
+The former you probably want to do at build time (or inside your engine's editor), and the latter you want to do at runtime.
+The former also requires the Vulkan SDK, while the latter only requires SDL headers.
+
+To enable the compilation functions, you specify `SHAD_COMPILER` before including `cm_shader.h`
+
+To enable the runtime functions, you specify `SHAD_RUNTIME` before including `cm_shader.h`
+
+## Shader annotations
 
 ### Vertex input/output
 
