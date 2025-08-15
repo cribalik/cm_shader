@@ -5,7 +5,10 @@
 - Handle setting `set` and `binding` indices for you
 - Supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs
 
+# Example
+
 ```glsl
+/* triangle.shader */
 @blend src_alpha one_minus_src_alpha add
 @cull front
 
@@ -13,6 +16,7 @@
     @in vec2 in_pos;
     @in vec2 in_uv;
     @out vec2 vertex_uv;
+    @import "some_other_file.shader"
     void main() {
         gl_Position = vec4(in_pos, 0.0, 1.0);
         vertex_uv = in_uv;
@@ -28,9 +32,8 @@
 @end
 ```
 
-# C/C++ usage with SDL3
-
 ```c++
+/* your C/C++ code */
 #include <SDL3/SDL.h>
 #include "cm_shader.h"
 
@@ -60,12 +63,27 @@ void func() {
 #include "cm_shader.c"
 ```
 
+Full example under `examples/sdl_example.c`
+
+# State of project
+
+**NOTE:**
+Currently you have to compile the shaders at runtime or manually serialize the compilation result to object to precompile shaders.
+Very soon there will be an API to serialize the compilation result into either binary or C code so that you can precompile the shaders at build time and only have to load bytes at runtime.
+
+- [x] Support Windows
+- [ ] Support Linux
+- [ ] Support Mac
+- [x] Support Vulkan (SPIRV)
+- [ ] Support D3D12
+- [ ] Support Metal
+- [ ] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
+
 # Build
 
-## 1. Install the Vulkan SDK.
+## 1. Link the Vulkan SDK.
 
 `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
-Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to your includes path.
 
 ## 2. Include `cm_shader.h` and `cm_shader.c` into your project.
 
@@ -76,15 +94,6 @@ Make sure you add %VULKAN_SDK%\Lib to your lib path, and %VULKAN_SDK%\Include to
 /* your code */
 #include "cm_shader.c"
 ```
-
-# Progress
-
-- [x] Support Windows
-- [ ] Support Linux
-- [ ] Support Mac
-- [x] Support Vulkan (SPIRV)
-- [ ] Support D3D12
-- [ ] Support Metal
 
 # Documentation
 
@@ -261,3 +270,12 @@ To specify different `@blend` settings for different fragment outputs, you can j
     @output(format=rgba8) vec4 color2;
 @end
 ```
+
+### @import
+
+Example:
+```glsl
+@import "somefile.shader"
+```
+
+Works similarly to C/C++ `#include` - finds a file relative to the current file and pastes its contents in-place.
