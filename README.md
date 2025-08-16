@@ -77,6 +77,8 @@ You can either compile using the C interface, or using the CLI.
 shad_cli.exe triangle.shader --output triangle_shader.h --sdl --output_c
 ```
 
+You can find the CLI under [Releases](https://github.com/cribalik/cm_shader/releases)
+
 ### Compilation using C library
 
 ```c++
