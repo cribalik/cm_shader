@@ -19,6 +19,10 @@ See README.md for documentation
 extern "C" {
 #endif
 
+#if !defined(SHAD_RUNTIME) && !defined(SHAD_COMPILER)
+    #error "Either SHAD_RUNTIME or SHAD_COMPILER must be defined. Check the README.md for examples"
+#endif
+
 typedef enum ShadOutputFormat {
     SHAD_OUTPUT_FORMAT_INVALID,
     SHAD_OUTPUT_FORMAT_SDL,
