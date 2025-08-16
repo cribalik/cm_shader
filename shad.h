@@ -20,6 +20,7 @@ extern "C" {
 #endif
 
 typedef enum ShadOutputFormat {
+    SHAD_OUTPUT_FORMAT_INVALID,
     SHAD_OUTPUT_FORMAT_SDL,
     /* Other rendering frameworks will be supported in the future */
 } ShadOutputFormat;
@@ -177,9 +178,6 @@ typedef struct ShadVertexInputBuffer {
 } ShadVertexInputBuffer;
 
 typedef struct ShadResult {
-    /* the name of the file without extension */
-    char *name;
-
     /* vertex shader info */
     char *vertex_code;
     size_t vertex_code_size;
@@ -233,7 +231,7 @@ void shad_result_free(ShadResult*);
     The C code will be of the format:
         static const ShadResult shad_result_<name_of_file_without_extension>;
 */
-void shad_serialize_to_c(const ShadResult *result, char **code_out, size_t *num_bytes_out);
+void shad_serialize_to_c(const ShadResult *result, const char *name, char **code_out, size_t *num_bytes_out);
 /*
     Serialize a compilation into a binary format.
     Deserialize with shad_deserialize()

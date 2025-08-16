@@ -67,7 +67,17 @@ void func() {
 #include "shad.c"
 ```
 
-## Precompiling at build time
+## Compiling at build time
+
+You can either compile using the C interface, or using the CLI.
+
+### Compilation using CLI
+
+```bash
+shad_cli.exe triangle.shader --output triangle_shader.h --sdl --output_c
+```
+
+### Compilation using C library
 
 ```c++
 /* at build time */
@@ -79,11 +89,13 @@ void compile() {
 
     char *c_code;
     size_t c_code_len;
-    shad_serialize_to_c(&sc, &c_code, &c_code_len);
+    shad_serialize_to_c(&sc, "triangle", &c_code, &c_code_len);
     write_to_file("triangle_shader.h", c_code, c_code_len);
 }
 #include "shad.c"
 ```
+
+### Using the pre-build shader at runtime
 
 ```c++
 /* in your app */
@@ -106,23 +118,43 @@ Completed:
 - [x] Support Windows
 - [x] Support Vulkan (SPIRV)
 - [x] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
+- [x] Make a command line tool for precompiling shaders
 
 TODO:
-- [ ] Make a command line tool for precompiling shaders
 - [ ] Support compiling to D3D12
 - [ ] Support Linux
 
 # Build
 
-## 1. Link the Vulkan SDK (only required for `shad_compile()`)
+## Building the compiler
+
+**NOTE**: If you're compiling the shaders at build time, consider using the cli (shad_cli.exe) instead.
+
+1. Link the Vulkan SDK (only required for `shad_compile()`)
 
 `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
 
-## 2. Include `shad.h` and `shad.c` into your project.
+2. Include `shad.h` and `shad.c` into your project, and define `SHAD_COMPILER`
 
 `shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
 
 ```c++
+#define SHAD_COMPILER
+#include "shad.h"
+/* your code */
+#include "shad.c"
+```
+
+## Building the runtime
+
+1. Include SDL3 headers
+
+2. Include `shad.h` and shad.c`, and define `SHAD_RUNTIME`
+
+`shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
+
+```c++
+#define SHAD_RUNTIME
 #include "shad.h"
 /* your code */
 #include "shad.c"

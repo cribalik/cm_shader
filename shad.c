@@ -1058,11 +1058,6 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
     result->num_fragment_buffers = num_fragment_buffers;
     result->num_fragment_uniforms = num_fragment_uniforms;
 
-    /* figure out name of the file */
-    char *file, *file_end;
-    shad__filename((char*)path, &file, &file_end);
-    result->name = shad__strcpy(&arena, file, file_end);
-
     /* convert output code to SPIRV */
     result->vertex_code = vertex_output.buf;
     result->vertex_code_size = vertex_output.len;
@@ -1106,28 +1101,28 @@ void shad__serialize_spirv_to_code(ShadWriter *w, uint32_t *spirv, int spirv_siz
     }
 }
 
-void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t *num_bytes_out) {
+void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char **code_out, size_t *num_bytes_out) {
     ShadResult *result = (ShadResult*)shad_result;
     ShadArena tmp = {0};
     ShadWriter writer = {&tmp};
 
     /* vertex spirv */
-    shad__writer_print(&writer, "uint32_t shad__spirv_vertex_code_%s[%i] = {", result->name, (int)result->spirv_vertex_code_size);
+    shad__writer_print(&writer, "uint32_t shad__spirv_vertex_code_%s[%i] = {", name, (int)result->spirv_vertex_code_size);
     shad__serialize_spirv_to_code(&writer, result->spirv_vertex_code, result->spirv_vertex_code_size);
     shad__writer_print(&writer, "};\n");
 
     /* fragment spirv */
     if (result->has_fragment_shader) {
-        shad__writer_print(&writer, "uint32_t shad__spirv_fragment_code_%s[%i] = {", result->name, (int)result->spirv_fragment_code_size);
+        shad__writer_print(&writer, "uint32_t shad__spirv_fragment_code_%s[%i] = {", name, (int)result->spirv_fragment_code_size);
         shad__serialize_spirv_to_code(&writer, result->spirv_fragment_code, result->spirv_fragment_code_size);
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "uint32_t shad__spirv_fragment_code_%s[1] = {0}", result->name);
+        shad__writer_print(&writer, "uint32_t shad__spirv_fragment_code_%s[1] = {0}", name);
     }
 
     /* vertex inputs */
     if (result->num_vertex_inputs) {
-        shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[%i] = {\n", result->name, (int)result->num_vertex_inputs);
+        shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[%i] = {\n", name, (int)result->num_vertex_inputs);
         for (int i = 0; i < result->num_vertex_inputs; ++i) {
             ShadVertexInput *in = result->vertex_inputs + i;
             shad__writer_print(&writer,
@@ -1151,12 +1146,12 @@ void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t 
         }
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[1] = {0};\n", result->name);
+        shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[1] = {0};\n", name);
     }
 
     /* vertex input buffers */
     if (result->num_vertex_input_buffers) {
-        shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[%i] = {\n", result->name, (int)result->num_vertex_input_buffers);
+        shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[%i] = {\n", name, (int)result->num_vertex_input_buffers);
         for (int i = 0; i < result->num_vertex_input_buffers; ++i) {
             ShadVertexInputBuffer *in = result->vertex_input_buffers + i;
             shad__writer_print(&writer,
@@ -1171,12 +1166,12 @@ void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t 
         }
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[1] = {0};\n", result->name);
+        shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[1] = {0};\n", name);
     }
 
     /* fragment outputs */
     if (result->num_fragment_outputs) {
-        shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[%i] = {\n", result->name, (int)result->num_fragment_outputs);
+        shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[%i] = {\n", name, (int)result->num_fragment_outputs);
         for (int i = 0; i < result->num_fragment_outputs; ++i) {
             ShadFragmentOutput *fout = result->fragment_outputs + i;
             shad__writer_print(&writer,
@@ -1195,13 +1190,12 @@ void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t 
         }
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[1] = {0};\n", result->name);
+        shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[1] = {0};\n", name);
     }
 
     /* ShadResult */
     shad__writer_print(&writer,
         "ShadResult shad__result_%s = {\n"
-        "    (char*)\"%s\", /* name */\n"
         "    NULL, /* vertex_code */\n"
         "    0, /* vertex_code_size */\n"
         "    shad__spirv_vertex_code_%s, /* spirv_vertex_code */\n"
@@ -1236,13 +1230,12 @@ void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t 
         "    %i, /* multisample_count */\n"
         "    NULL, /* arena */\n"
         "};\n",
-        result->name,
-        result->name,
-        result->name,
+        name,
+        name,
         result->spirv_vertex_code_size,
-        result->name,
+        name,
         result->num_vertex_inputs,
-        result->name,
+        name,
         (int)result->num_vertex_input_buffers,
         (int)result->num_vertex_outputs,
         (int)result->num_vertex_samplers,
@@ -1250,9 +1243,9 @@ void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t 
         (int)result->num_vertex_buffers,
         (int)result->num_vertex_uniforms,
         (int)result->has_fragment_shader,
-        result->name,
+        name,
         result->spirv_fragment_code_size,
-        result->name,
+        name,
         (int)result->num_fragment_outputs,
         (int)result->num_fragment_samplers,
         (int)result->num_fragment_images,
@@ -1266,7 +1259,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, char **code_out, size_t 
         (int)result->multisample_count
     );
 
-    shad__writer_print(&writer, "ShadResult* shad_result_%s(void) {return &shad__result_%s;}\n", result->name, result->name);
+    shad__writer_print(&writer, "ShadResult* shad_result_%s(void) {return &shad__result_%s;}\n", name, name);
 
     int len = writer.len;
     char *output = (char*)malloc(len+1);
@@ -1284,10 +1277,6 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
 
     #define SHAD_WRITE_N(ptr, size) shad__writer_push(&writer, (char*)(ptr), size);
     #define SHAD_WRITE(ptr) SHAD_WRITE_N(ptr, sizeof(*(ptr)))
-
-    size_t name_len = strlen(compiled->name);
-    SHAD_WRITE(&name_len);
-    SHAD_WRITE_N(compiled->name, name_len);
 
     /* vertex shader info */
     SHAD_WRITE(&compiled->spirv_vertex_code_size);
@@ -1368,12 +1357,6 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
         num_bytes_remaining -= s; \
     } while (0)
     #define SHAD_READ(ptr) SHAD_READ_N(ptr, sizeof(*(ptr)))
-
-    size_t name_len;
-    SHAD_READ(&name_len);
-    compiled->name = SHAD_ALLOC(char, &arena, name_len+1);
-    SHAD_READ_N(compiled->name, name_len);
-    compiled->name[name_len] = 0;
 
     /* vertex shader info */
     SHAD_READ(&compiled->spirv_vertex_code_size);

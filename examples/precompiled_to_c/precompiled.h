@@ -13,7 +13,6 @@ ShadFragmentOutput shad__fragment_outputs_triangle[1] = {
     },
 };
 ShadResult shad__result_triangle = {
-    (char*)"triangle", /* name */
     NULL, /* vertex_code */
     0, /* vertex_code_size */
     shad__spirv_vertex_code_triangle, /* spirv_vertex_code */
