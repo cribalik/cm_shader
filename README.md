@@ -348,6 +348,14 @@ To specify different `@blend` settings for different fragment outputs, you can j
 @end
 ```
 
+### @primitive
+
+Specifies to primitive topology.
+
+```glsl
+@primitive triangle_list|triangle_strip|line_list|line_strip|point_list
+```
+
 ### @import
 
 Example:

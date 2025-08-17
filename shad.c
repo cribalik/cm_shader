@@ -404,6 +404,15 @@ ShadCullMode shad__consume_cull_mode(ShadParser *p) {
     return SHAD_CULL_MODE_INVALID;
 }
 
+ShadPrimitive shad__consume_primitive(ShadParser *p) {
+    if (shad__match_identifier(p, "triangle_list")) return SHAD_PRIMITIVE_TRIANGLE_LIST;
+    if (shad__match_identifier(p, "triangle_strip")) return SHAD_PRIMITIVE_TRIANGLE_STRIP;
+    if (shad__match_identifier(p, "line_list")) return SHAD_PRIMITIVE_LINE_LIST;
+    if (shad__match_identifier(p, "line_strip")) return SHAD_PRIMITIVE_LINE_STRIP;
+    if (shad__match_identifier(p, "point_list")) return SHAD_PRIMITIVE_POINT_LIST;
+    return SHAD_PRIMITIVE_INVALID;
+}
+
 ShadBlendFactor shad__consume_blend_factor(ShadParser *p) {
     if (shad__match_identifier(p, "zero")) return SHAD_BLEND_FACTOR_ZERO;
     if (shad__match_identifier(p, "one")) return SHAD_BLEND_FACTOR_ONE;
@@ -681,6 +690,10 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
                 result->cull_mode = shad__consume_cull_mode(&p);
                 if (!result->cull_mode) SHAD_PARSE_ERROR("Invalid cull mode value. Options are: none, front, back");
             }
+            else if (shad__match_identifier(&p, "@primitive")) {
+                result->primitive = shad__consume_primitive(&p);
+                if (!result->primitive) SHAD_PARSE_ERROR("Invalid primitive value. Options are: triangle_list, triangle_strip, line_list, line_strip, point_list");
+            }
             else if (shad__match_identifier(&p, "@multisample")) {
                 int ms;
                 if (!shad__consume_integer(&p, &ms)) SHAD_PARSE_ERROR("Expected number of samples.\nExample:\n@multisample 4");
@@ -688,7 +701,7 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
                 result->multisample_count = ms;
             }
             else {
-                SHAD_PARSE_ERROR("Expected @vert to start vertex shader");
+                SHAD_PARSE_ERROR("Unknown command. Did you mean @vert to start the vertex shader?");
             }
             break;
 
@@ -1227,6 +1240,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
         "    %i, /* depth_clip */\n"
         "    {0}, /* cull_code_location */\n"
         "    (ShadCullMode)%i, /* cull_mode */\n"
+        "    (ShadPrimitive)%i, /* primitive */\n"
         "    %i, /* multisample_count */\n"
         "    NULL, /* arena */\n"
         "};\n",
@@ -1256,6 +1270,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
         (int)result->depth_format,
         (int)result->depth_clip,
         (int)result->cull_mode,
+        (int)result->primitive,
         (int)result->multisample_count
     );
 
@@ -1325,6 +1340,9 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
 
     /* culling */
     SHAD_WRITE(&compiled->cull_mode);
+
+    /* primitive */
+    SHAD_WRITE(&compiled->primitive);
 
     /* multisampling. Valid values are 1,2,4,8 */
     SHAD_WRITE(&compiled->multisample_count);
@@ -1410,6 +1428,9 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
 
     /* culling */
     SHAD_READ(&compiled->cull_mode);
+
+    /* primitive */
+    SHAD_READ(&compiled->primitive);
 
     /* multisampling. Valid values are 1,2,4,8 */
     SHAD_READ(&compiled->multisample_count);
@@ -1553,6 +1574,15 @@ static const SDL_GPUSampleCount shad_to_sdl_sample_count[] = {
     SDL_GPU_SAMPLECOUNT_8, /* 8 */
 };
 
+static const SDL_GPUPrimitiveType shad_to_sdl_primitive[] = {
+    SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,  /* SHAD_PRIMITIVE_INVALID */
+    SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,  /* SHAD_PRIMITIVE_TRIANGLE_LIST */
+    SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP, /* SHAD_PRIMITIVE_TRIANGLE_STRIP */
+    SDL_GPU_PRIMITIVETYPE_LINELIST,      /* SHAD_PRIMITIVE_LINE_LIST */
+    SDL_GPU_PRIMITIVETYPE_LINESTRIP,     /* SHAD_PRIMITIVE_LINE_STRIP */
+    SDL_GPU_PRIMITIVETYPE_POINTLIST,      /* SHAD_PRIMITIVE_POINT_LIST */
+};
+
 void shad_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, ShadResult *compiled) {
     memset(info, 0, sizeof(*info));
     info->code = (Uint8*)compiled->spirv_vertex_code;
@@ -1660,6 +1690,9 @@ void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResu
     }
     target_info->depth_stencil_format = shad_to_sdl_texture_format[compiled->depth_format];
     target_info->has_depth_stencil_target = compiled->depth_cmp != SHAD_COMPARE_OP_INVALID;
+
+    /* primitive */
+    info->primitive_type = shad_to_sdl_primitive[compiled->primitive];
 }
 
 #endif /* SDL_VERSION */

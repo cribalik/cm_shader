@@ -132,6 +132,15 @@ typedef enum ShadTextureFormat {
     SHAD_TEXTURE_FORMAT_D32F_S8,    /* @depth less write d32f_s8 clip */
 } ShadTextureFormat;
 
+typedef enum ShadPrimitive {
+    SHAD_PRIMITIVE_INVALID,
+    SHAD_PRIMITIVE_TRIANGLE_LIST,
+    SHAD_PRIMITIVE_TRIANGLE_STRIP,
+    SHAD_PRIMITIVE_LINE_LIST,
+    SHAD_PRIMITIVE_LINE_STRIP,
+    SHAD_PRIMITIVE_POINT_LIST,
+} ShadPrimitive;
+
 typedef struct ShadCodeLocation {
     char *path;
     char *start;
@@ -220,6 +229,9 @@ typedef struct ShadResult {
     /* culling */
     ShadCodeLocation cull_code_location;
     ShadCullMode cull_mode;
+
+    /* primitive */
+    ShadPrimitive primitive;
 
     /* multisampling. Valid values are 1,2,4,8 */
     int multisample_count;

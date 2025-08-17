@@ -44,6 +44,7 @@ ShadResult shad__result_triangle = {
     0, /* depth_clip */
     {0}, /* cull_code_location */
     (ShadCullMode)0, /* cull_mode */
+    (ShadPrimitive)0, /* primitive */
     0, /* multisample_count */
     NULL, /* arena */
 };

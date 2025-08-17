@@ -1,6 +1,7 @@
 @depth less write d24 clip
 @multisample 4
 @cull front
+@primitive triangle_list
 
 @vert
 
