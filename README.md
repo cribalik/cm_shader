@@ -4,6 +4,7 @@
 - Fill the SDL3 GPU creation structs for you
 - Handle setting `set` and `binding` indices for you
 - Supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs
+- Compiled shaders can be output to both C and binary format
 
 # Example
 
@@ -32,42 +33,7 @@
 @end
 ```
 
-## Compiling at runtime
-
-```c++
-/* your C/C++ code */
-#include <SDL3/SDL.h>
-#define SHAD_COMPILER
-#define SHAD_RUNTIME
-#include "shad.h"
-
-void func() {
-    /* Compile shader */
-    ShadResult sc;
-    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
-
-    /* SDL shader creation */
-    SDL_GPUShaderCreateInfo vsinfo, fsinfo;
-    shad_sdl_prefill_vertex_shader(&vsinfo, &sc);
-    shad_sdl_prefill_fragment_shader(&fsinfo, &sc);
-    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &vsinfo);
-    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &fsinfo);
-
-    /* SDL pipeline creation */
-    SDL_GPUGraphicsPipelineCreateInfo pinfo;
-    shad_sdl_prefill_pipeline(&pinfo, &sc);
-    pinfo.vertex_shader = vshader;
-    pinfo.fragment_shader = fshader;
-    SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
-
-    /* free compilation */
-    shad_result_free(&sc);
-}
-
-#include "shad.c"
-```
-
-## Compiling at build time
+## Compiling the shader
 
 You can either compile using the C interface, or using the CLI.
 
@@ -86,29 +52,48 @@ You can find the CLI under [Releases](https://github.com/cribalik/cm_shader/rele
 #define SHAD_COMPILER
 #include "shad.h"
 void compile() {
-    ShadResult sc;
-    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
+    ShadResult sr;
+    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sr);
 
-    char *c_code;
-    size_t c_code_len;
-    shad_serialize_to_c(&sc, "triangle", &c_code, &c_code_len);
-    write_to_file("triangle_shader.h", c_code, c_code_len);
+    char *code;
+    size_t code_len;
+    shad_serialize_to_c(&sr, "triangle", &code, &code_len);
+    write_to_file("triangle_shader.h", code, code_len);
 }
 #include "shad.c"
 ```
 
-### Using the pre-build shader at runtime
+## Using the compilation result to create SDL Shaders & Pipelines
 
 ```c++
-/* in your app */
+#include <SDL3/SDL.h>
 #define SHAD_RUNTIME
 #include "shad.h"
+
+/* this contains all the shader info we compiled, accessible through shad_result_<name>() */
 #include "triangle_shader.h"
-void run() {
-    ShadResult *sc = shad_result_triangle(); /* this exists in triangle_shader.h */
-    /* use sc */
-    sc_result_free(sc);
+
+void func() {
+    ShadResult *sr = shad_result_triangle(); /* this exists in triangle_shader.h */
+
+    /* SDL shader creation */
+    SDL_GPUShaderCreateInfo vsinfo, fsinfo;
+    shad_sdl_prefill_vertex_shader(&vsinfo, &sr);
+    shad_sdl_prefill_fragment_shader(&fsinfo, &sr);
+    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &vsinfo);
+    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &fsinfo);
+
+    /* SDL pipeline creation */
+    SDL_GPUGraphicsPipelineCreateInfo pinfo;
+    shad_sdl_prefill_pipeline(&pinfo, &sr);
+    pinfo.vertex_shader = vshader;
+    pinfo.fragment_shader = fshader;
+    SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
+
+    /* free compilation */
+    shad_result_free(&sr);
 }
+
 #include "shad.c"
 ```
 
@@ -130,12 +115,9 @@ TODO:
 
 ## Building the compiler
 
-**NOTE**: If you're compiling the shaders at build time, consider using the cli (shad_cli.exe) instead.
+**NOTE**: If you will be compiling the shaders at build time, consider using the CLI instead.
 
-1. Link the Vulkan SDK (only required for `shad_compile()`)
-
-`cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
-
+1. Link the Vulkan SDK. `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
 2. Include `shad.h` and `shad.c` into your project, and define `SHAD_COMPILER`
 
 `shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
@@ -150,8 +132,7 @@ TODO:
 ## Building the runtime
 
 1. Include SDL3 headers
-
-2. Include `shad.h` and shad.c`, and define `SHAD_RUNTIME`
+2. Include `shad.h` and `shad.c`, and define `SHAD_RUNTIME`
 
 `shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
 
@@ -164,10 +145,10 @@ TODO:
 
 # Documentation
 
-## Compiling versus Runtime
+## `SHAD_COMPILER` versus `SHAD_RUNTIME`
 
 There are two aspects to the library - compiling the shaders to generate SPIRV and reflection data, and actually applying that information to the SDL creation structs.
-The former you probably want to do at build time (or inside your engine's editor), and the latter you want to do at runtime.
+The former you probably want to do at build time, and the latter you want to do at runtime.
 The former also requires the Vulkan SDK, while the latter only requires SDL headers.
 
 To enable the compilation functions, you specify `SHAD_COMPILER` before including `shad.h`
