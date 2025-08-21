@@ -11,7 +11,7 @@ int main(int argc, char const *argv[]) {
 
     /* serialize to binary */
     char *bytes;
-    size_t bytes_len;
+    int bytes_len;
     shad_serialize(&sc, &bytes, &bytes_len);
 
     /* write bytes to a header that we'll include in main.c */

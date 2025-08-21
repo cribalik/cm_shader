@@ -25,7 +25,7 @@ extern "C" {
 
 typedef enum ShadOutputFormat {
     SHAD_OUTPUT_FORMAT_INVALID,
-    SHAD_OUTPUT_FORMAT_SDL,
+    SHAD_OUTPUT_FORMAT_SDL
     /* Other rendering frameworks will be supported in the future */
 } ShadOutputFormat;
 
@@ -62,7 +62,7 @@ typedef enum ShadVertexElementFormat {
     SHAD_VERTEXELEMENTFORMAT_SHORT2_NORM,  /* @in(type=i16) vec2 x; */
     SHAD_VERTEXELEMENTFORMAT_SHORT4_NORM,  /* @in(type=i16) vec4 x; */
     SHAD_VERTEXELEMENTFORMAT_USHORT2_NORM, /* @in(type=u16) vec2 x; */
-    SHAD_VERTEXELEMENTFORMAT_USHORT4_NORM, /* @in(type=u16) vec4 x; */
+    SHAD_VERTEXELEMENTFORMAT_USHORT4_NORM /* @in(type=u16) vec4 x; */
 } ShadVertexElementFormat;
 
 typedef enum ShadBlendFactor {
@@ -79,7 +79,7 @@ typedef enum ShadBlendFactor {
     SHAD_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
     SHAD_BLEND_FACTOR_CONSTANT_COLOR,
     SHAD_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
-    SHAD_BLEND_FACTOR_SRC_ALPHA_SATURATE,
+    SHAD_BLEND_FACTOR_SRC_ALPHA_SATURATE
 } ShadBlendFactor;
 
 typedef enum ShadBlendOp {
@@ -88,14 +88,14 @@ typedef enum ShadBlendOp {
     SHAD_BLEND_OP_SUBTRACT,     /* subtract */
     SHAD_BLEND_OP_REV_SUBTRACT, /* rev_subtract */
     SHAD_BLEND_OP_MIN,          /* min */
-    SHAD_BLEND_OP_MAX,          /* max */
+    SHAD_BLEND_OP_MAX          /* max */
 } ShadBlendOp;
 
 typedef enum ShadCullMode {
     SHAD_CULL_MODE_INVALID,
     SHAD_CULL_MODE_NONE, /* none */
     SHAD_CULL_MODE_FRONT,/* front */
-    SHAD_CULL_MODE_BACK, /* back */
+    SHAD_CULL_MODE_BACK /* back */
 } ShadCullMode;
 
 typedef enum ShadCompareOp {
@@ -107,7 +107,7 @@ typedef enum ShadCompareOp {
     SHAD_COMPARE_OP_GREATER,           /* greater */
     SHAD_COMPARE_OP_NOT_EQUAL,         /* not_equal */
     SHAD_COMPARE_OP_GREATER_OR_EQUAL,  /* greater_or_equal */
-    SHAD_COMPARE_OP_ALWAYS,            /* always */
+    SHAD_COMPARE_OP_ALWAYS            /* always */
 } ShadCompareOp;
 
 typedef enum ShadTextureFormat {
@@ -129,7 +129,7 @@ typedef enum ShadTextureFormat {
     SHAD_TEXTURE_FORMAT_D24,        /* @depth less write d24 clip */
     SHAD_TEXTURE_FORMAT_D32F,       /* @depth less write d32f clip */
     SHAD_TEXTURE_FORMAT_D24_S8,     /* @depth less write d24_s8 clip */
-    SHAD_TEXTURE_FORMAT_D32F_S8,    /* @depth less write d32f_s8 clip */
+    SHAD_TEXTURE_FORMAT_D32F_S8    /* @depth less write d32f_s8 clip */
 } ShadTextureFormat;
 
 typedef enum ShadPrimitive {
@@ -138,7 +138,7 @@ typedef enum ShadPrimitive {
     SHAD_PRIMITIVE_TRIANGLE_STRIP,
     SHAD_PRIMITIVE_LINE_LIST,
     SHAD_PRIMITIVE_LINE_STRIP,
-    SHAD_PRIMITIVE_POINT_LIST,
+    SHAD_PRIMITIVE_POINT_LIST
 } ShadPrimitive;
 
 typedef struct ShadCodeLocation {
@@ -193,9 +193,9 @@ typedef struct ShadVertexInputBuffer {
 typedef struct ShadResult {
     /* vertex shader info */
     char *vertex_code;
-    size_t vertex_code_size;
-    uint32_t *spirv_vertex_code;
-    size_t spirv_vertex_code_size;
+    int vertex_code_size;
+    char *spirv_vertex_code;
+    int spirv_vertex_code_size;
     ShadVertexInput *vertex_inputs;
     int num_vertex_inputs;
     ShadVertexInputBuffer *vertex_input_buffers;
@@ -209,9 +209,9 @@ typedef struct ShadResult {
     /* fragment shader info */
     ShadBool has_fragment_shader;
     char *fragment_code;
-    size_t fragment_code_size;
-    uint32_t *spirv_fragment_code;
-    size_t spirv_fragment_code_size;
+    int fragment_code_size;
+    char *spirv_fragment_code;
+    int spirv_fragment_code_size;
     ShadFragmentOutput *fragment_outputs;
     int num_fragment_outputs;
     int num_fragment_samplers;
@@ -247,17 +247,17 @@ void shad_result_free(ShadResult*);
     The C code will be of the format:
         static const ShadResult shad_result_<name_of_file_without_extension>;
 */
-void shad_serialize_to_c(const ShadResult *result, const char *name, char **code_out, size_t *num_bytes_out);
+void shad_serialize_to_c(const ShadResult *result, const char *name, char **code_out, int *num_bytes_out);
 /*
     Serialize a compilation into a binary format.
     Deserialize with shad_deserialize()
     Free the result with shad_free()
 */
-void shad_serialize(const ShadResult *result, char **bytes_out, size_t *num_bytes_out);
+void shad_serialize(const ShadResult *result, char **bytes_out, int *num_bytes_out);
 /*
     Deserialize bytes that were serialized with shad_serialize()
 */
-ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *result);
+ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *result);
 void shad_free(void*);
 
 /*******

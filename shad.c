@@ -1,10 +1,10 @@
 #include "shad.h"
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-
 
 /******
 
@@ -31,11 +31,12 @@ typedef struct ShadArena {
     char *end;
 } ShadArena;
 
-void* shad__alloc(ShadArena* arena, size_t size, size_t align) {
+void* shad__alloc(ShadArena* arena, int size, int align) {
+    char *curr = NULL;
     if (!size) return NULL;
-    char *curr = (char*)(((size_t)arena->curr + (align - 1)) & ~((size_t)align - 1));
+    curr = (char*)(((size_t)arena->curr + (align - 1)) & ~((size_t)align - 1));
     if (curr + size > arena->end) {
-        size_t block_size = (size + 1024)*2;
+        int block_size = (size + 1024)*2;
         ShadArenaBlock *block = (ShadArenaBlock*)malloc(block_size);
         block->next = arena->blocks;
         arena->blocks = block;
@@ -56,7 +57,8 @@ void* shad__alloc(ShadArena* arena, size_t size, size_t align) {
 #define SHAD_STREQ(a,b) (!strcmp(a,b))
 
 void shad__arena_destroy(ShadArena *a) {
-    for (ShadArenaBlock *b = a->blocks, *next; b; b = next) {
+    ShadArenaBlock *b = a->blocks, *next = NULL;
+    for (; b; b = next) {
         next = b->next;
         free(b);
     }
@@ -69,23 +71,85 @@ typedef struct ShadWriter {
     int cap;
 } ShadWriter;
 
+int shad__vsnprintf(char *buffer, int size, const char *fmt, va_list args) {
+    char *out = buffer;
+    char *out_end = out + size;
+    char buf[64];
+    int i;
+    unsigned u;
+    int n;
+    int neg;
+    char *s;
+
+    while (*fmt) {
+        if (*fmt != '%') {buf[0] = *fmt++; s = buf; n = 1; goto add_ns;}
+        ++fmt;
+        if (*fmt == 's') {++fmt; s = va_arg(args, char*); goto add_s;}
+        if (*fmt == 'S') {++fmt; s = va_arg(args, char*); n = (int)(va_arg(args, char*) - s); goto add_ns;}
+        if (*fmt == 'i') {++fmt; i = va_arg(args, int); goto add_i;}
+        if (*fmt == 'x') {++fmt; u = va_arg(args, unsigned); goto add_x;}
+
+        add_i:
+            s = buf + sizeof(buf);
+            if (i < 0) neg = 1, i = -i; else neg = 0;
+            if (!i) *--s = '0';
+            while (i) *--s = '0' + i%10, i /= 10;
+            if (neg) *--s = '-';
+            n = (int)(buf + sizeof(buf) - s);
+            goto add_ns;
+
+        add_x:
+            s = buf + sizeof(buf);
+            if (!u) *--s = '0';
+            while (u) *--s = "0123456789abcdef"[u%16], u /= 16;
+            *--s = 'x';
+            *--s = '0';
+            n = (int)(buf + sizeof(buf) - s);
+            goto add_ns;
+
+        add_ns:
+            while (n && out < out_end) *out++ = *s++, --n;
+            out += n;
+            continue;
+
+        add_s:
+            while (*s && out < out_end) *out++ = *s++;
+            while (*s) ++out, ++s;
+            continue;
+    }
+
+    if (out < out_end) *out = 0;
+
+    return out - buffer;
+}
+
+int shad__snprintf(char *buffer, int size, const char *fmt, ...) {
+    va_list args;
+    int len;
+    va_start(args, fmt);
+    len = shad__vsnprintf(buffer, size, fmt, args);
+    va_end(args);
+    return len;
+}
+
 void shad__writer_print(ShadWriter *w, const char *fmt, ...) {
     va_list args;
 
     va_start(args, fmt);
-    int len = vsnprintf(NULL, 0, fmt, args);
+    int len = shad__vsnprintf(NULL, 0, fmt, args);
     va_end(args);
 
     if (w->len + len >= w->cap) {
+        char *buf = NULL;
         w->cap = (w->cap + len + 64)*2;
-        char *buf = SHAD_ALLOC(char, w->arena, w->cap);
+        buf = SHAD_ALLOC(char, w->arena, w->cap);
         memcpy(buf, w->buf, w->len);
         buf[w->len] = 0;
         w->buf = buf;
     }
 
     va_start(args, fmt);
-    vsnprintf(w->buf + w->len, len+1, fmt, args);
+    shad__vsnprintf(w->buf + w->len, len+1, fmt, args);
     va_end(args);
 
     w->len += len;
@@ -93,8 +157,9 @@ void shad__writer_print(ShadWriter *w, const char *fmt, ...) {
 
 void shad__writer_push(ShadWriter *w, char *data, int len) {
     if (w->len + len >= w->cap) {
+        char *buf = NULL;
         w->cap = (w->cap + len + 64)*2;
-        char *buf = SHAD_ALLOC(char, w->arena, w->cap);
+        buf = SHAD_ALLOC(char, w->arena, w->cap);
         memcpy(buf, w->buf, w->len);
         buf[w->len] = 0;
         w->buf = buf;
@@ -121,10 +186,12 @@ void shad_result_free(ShadResult *r) {
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
 
+#ifdef _WIN32
 #pragma comment(lib, "glslang-default-resource-limits.lib")
 #pragma comment(lib, "glslang.lib")
 #pragma comment(lib, "SPIRV-Tools-opt.lib")
 #pragma comment(lib, "SPIRV-Tools.lib")
+#endif
 
 typedef struct ShadFile {
     struct ShadFile *next;
@@ -140,10 +207,25 @@ typedef struct ShadParser {
     ShadFile *file;
 } ShadParser;
 
+ShadBool shad__isspace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+ShadBool shad__isalnum(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+}
+
+ShadBool shad__isdigit(char c) {
+    return c >= '0' && c <= '9';
+}
+
 ShadBool shad__match(ShadParser *p, char *token) {
-    char *s = p->s;
-    char *t = token;
-    while (isspace(*s)) if (*s++ == '\n') ++s;
+    char *s;
+    char *t;
+
+    s = p->s;
+    t = token;
+    while (shad__isspace(*s)) if (*s++ == '\n') ++s;
     while (*s && *t && *s == *t) ++s, ++t;
     if (*t) return 0;
     p->s = s;
@@ -151,151 +233,190 @@ ShadBool shad__match(ShadParser *p, char *token) {
 }
 
 ShadBool shad__match_identifier(ShadParser *p, char *identifier) {
-    char *s = p->s;
-    char *t = identifier;
-    while (isspace(*s)) if (*s++ == '\n') ++s;
+    char *s;
+    char *t;
+
+    s = p->s;
+    t = identifier;
+    while (shad__isspace(*s)) if (*s++ == '\n') ++s;
     while (*s && *t && *s == *t) ++s, ++t;
     if (*t) return 0;
-    if (isalnum(*s) || *s == '_') return 0;
+    if (shad__isalnum(*s) || *s == '_') return 0;
     p->s = s;
     return 1;
 }
 
 char* shad__strcpy(ShadArena *arena, char *start, char *end) {
-    if (start == end) return "";
-    size_t len = end - start;
-    char *str = SHAD_ALLOC(char, arena, len+1);
-    memcpy(str, start, len);
-    str[len] = 0;
-    return str;
+    int len;
+    char *result;
+
+    len = end - start;
+    if (!len) return "";
+    result = SHAD_ALLOC(char, arena, len+1);
+    memcpy(result, start, len);
+    result[len] = 0;
+    return result;
 }
 
 char* shad__strcat(ShadArena *arena, ...) {
-    /* calc length */
     va_list args;
-    size_t len = 0;
+    int len;
+    char *curr;
+    char *result;
+
+    /* calc length */
     va_start(args, arena);
+    len = 0;
     while (1) {
-        char *a = va_arg(args, char*);
+        char *a;
+        char *b;
+
+        a = va_arg(args, char*);
         if (!a) break;
-        char *b = va_arg(args, char*);
+        b = va_arg(args, char*);
         len += b-a;
     }
     va_end(args);
 
     /* memcpy */
-    char *curr, *result;
     va_start(args, arena);
     curr = result = SHAD_ALLOC(char, arena, len+1);
     while (1) {
-        char *a = va_arg(args, char*);
+        char *a;
+        char *b;
+
+        a = va_arg(args, char*);
         if (!a) break;
-        char *b = va_arg(args, char*);
+        b = va_arg(args, char*);
         memcpy(curr, a, b-a);
         curr += b-a;
     }
     va_end(args);
-
     *curr = 0;
-
     return result;
 }
 
 void shad__filename(char *path, char **file_out, char **file_end_out) {
-    char *p = path;
-    char *end = path + strlen(path);
-    char *e = end;
-    while (e > p && *e != '.') --e;
-    if (e == p) e = end;
-    char *f = e;
-    while (f > p && *f != '/' && *f != '\\') --f;
-    if (f > p) ++f;
-    *file_out = f;
-    *file_end_out = e;
+    char *path_end;
+    char *file_start;
+    char *file_end;
+
+    path_end = file_end = path + strlen(path);
+    while (file_end > path && *file_end != '.') --file_end;
+    if (file_end == path) file_end = path_end;
+    file_start = file_end;
+    while (file_start > path && *file_start != '/' && *file_start != '\\') --file_start;
+    if (file_start > path) ++file_start;
+    *file_out = file_start;
+    *file_end_out = file_end;
 }
 
 char* shad__consume_identifier(ShadParser *p) {
-    char *s = p->s;
-    while (isspace(*s)) ++s;
-    char *start = s;
-    while (isalnum(*s) || *s == '_') ++s;
-    char *end = s;
+    char *s;
+    char *start;
+    char *end;
+
+    s = p->s;
+    while (shad__isspace(*s)) ++s;
+    start = s;
+    while (shad__isalnum(*s) || *s == '_') ++s;
+    end = s;
     if (start == end) return NULL;
 
     p->s = s;
     return shad__strcpy(p->arena, start, end);
 }
 
-int shad__parse_f64(const char *str, double *result) {
-    const char *s = str;
-    double res = 0;
-    int neg = 0;
+int shad__parse_f64(char *str, double *result) {
+    char *s;
+    double res;
+    double mul;
+    int neg;
+
+    s = str;
+    res = 0;
+    neg = 0;
     if (*s == '-') neg = 1, ++s;
     else if (*s == '+') ++s;
-    if (!isdigit(*s)) return 0;
-    for (; isdigit(*s); ++s)
+    if (!shad__isdigit(*s)) return 0;
+    for (; shad__isdigit(*s); ++s)
         res *= 10, res += *s - '0';
-    double mul = 0.1;
+    mul = 0.1;
     if (*s == '.')
-        for (++s; isdigit(*s); ++s)
+        for (++s; shad__isdigit(*s); ++s)
             res += mul * (*s - '0'), mul *= 0.1;
     *result = neg ? -res : res;
     return (int)(s - str);
 }
 
-int shad__parse_int(const char *str, long long *result) {
-    long long res = 0;
-    const char *s = str;
-    long long neg = 1;
+int shad__parse_int(const char *str, int *result) {
+    int res;
+    const char *s;
+    int neg;
+
+    s = str;
+    neg = 1;
     if (*s == '-') neg = -1, ++s;
     else if (*s == '+') neg = 1, ++s;
-    if (!isdigit(*s)) return 0;
-    while (isdigit(*s)) res *= 10, res += *s - '0', ++s;
+    if (!shad__isdigit(*s)) return 0;
+    res = 0;
+    while (shad__isdigit(*s)) res *= 10, res += *s - '0', ++s;
     *result = res * neg;
     return 1;
 }
 
-ShadBool shad__consume_float(ShadParser *p, float *result) {
-    char *s = p->s;
-    while (isspace(*s)) ++s;
-    double d;
-    int len = shad__parse_f64(s, &d);
+ShadBool shad__consume_float(ShadParser *p, float *float_out) {
+    char *s;
+    double result;
+    int len;
+
+    s = p->s;
+    while (shad__isspace(*s)) ++s;
+    len = shad__parse_f64(s, &result);
     if (!len) return 0;
-    *result = (float)d;
+    *float_out = (float)result;
     p->s = s + len;
     return 1;
 }
 
-ShadBool shad__consume_integer(ShadParser *p, int *result) {
-    char *s = p->s;
-    while (isspace(*s)) ++s;
-    long long i;
-    int len = shad__parse_int(s, &i);
+ShadBool shad__consume_integer(ShadParser *p, int *int_out) {
+    char *s;
+    int len;
+
+    s = p->s;
+    while (shad__isspace(*s)) ++s;
+    len = shad__parse_int(s, int_out);
     if (!len) return 0;
-    *result = (int)i;
     p->s = s + len;
     return 1;
 }
 
 void shad__consume_whitespace(ShadParser *p) {
-    char *s = p->s;
-    while (isspace(*s)) ++s;
+    char *s;
+
+    s = p->s;
+    while (shad__isspace(*s)) ++s;
     p->s = s;
 }
 
 void shad__errlog(ShadCodeLocation loc, const char *fmt, ...) {
-    int line_number = 1;
-    char *line = loc.start;
-    for (char *c = loc.start; c < loc.pos; ++c)
-        if (*c == '\n') ++line_number, line = c+1;
+    int line_number;
+    char *line;
+    va_list args;
+    int line_len;
+    char *iter;
+
+    line_number = 1;
+    line = loc.start;
+    for (iter = loc.start; iter < loc.pos; ++iter)
+        if (*iter == '\n') ++line_number, line = iter+1;
     fprintf(stderr, "Error %s:%i: ", loc.path, line_number);
 
-    va_list args;
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);
     va_end(args);
 
-    int line_len = 0;
+    line_len = 0;
     while (line[line_len] && line[line_len] != '\n' && line[line_len] != '\r') ++line_len;
     fprintf(stderr, "\n\n%.*s\n", line_len, line);
 }
@@ -303,15 +424,17 @@ void shad__errlog(ShadCodeLocation loc, const char *fmt, ...) {
 #define SHAD_PARSE_ERROR(...) do{ShadCodeLocation loc = {p.file->path, p.data, p.s}; SHAD_ERROR(loc, __VA_ARGS__);} while(0)
 
 char* shad__read_file(ShadArena *a, const char *path, int *len_out) {
-    FILE *file = fopen(path, "rb");
+    FILE *file = NULL;
+    long old_pos;
+    long count;
+    char* bytes;
+
+    file = fopen(path, "rb");
 
     if (!file)
         return 0;
 
-    // get file size
-    long old_pos;
-    int count;
-    char* bytes;
+    /* get file size */
     old_pos = ftell(file);
     if (fseek(file, 0, SEEK_END))
         goto err;
@@ -322,10 +445,10 @@ char* shad__read_file(ShadArena *a, const char *path, int *len_out) {
         goto err;
 
     bytes = SHAD_ALLOC(char, a, count+1);
-    fread(bytes, 1, count, file);
+    if (fread(bytes, count, 1, file) != 1) goto err;
     bytes[count] = 0;
     fclose(file);
-    if (len_out) *len_out = count;
+    if (len_out) *len_out = (int)count;
     return bytes;
 
     err:
@@ -335,33 +458,6 @@ char* shad__read_file(ShadArena *a, const char *path, int *len_out) {
 
 static const char shad__texture_format_options[] = "r8, rg8, rgba8, r16, rg16, rgba16, r16f, rg16f, rgba16f, r32f, rg32f, rgba32f, r11g11b10f";
 static const char shad__depth_format_options[] = "d16, d24, d32f, d24_s8, d32f_s8";
-
-ShadBool shad__consume_blend(ShadParser *p, ShadCodeLocation *blend_code_location, ShadBlendFactor *blend_src, ShadBlendFactor *blend_dst, ShadBlendOp *blend_op) {
-    blend_code_location->start = p->data;
-    blend_code_location->pos = p->s;
-    blend_code_location->path = p->file->path;
-
-    if (shad__match_identifier(p, "default")) {
-        *blend_src = SHAD_BLEND_FACTOR_SRC_ALPHA;
-        *blend_dst = SHAD_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        *blend_op = SHAD_BLEND_OP_ADD;
-    } else if (shad__match_identifier(p, "off")) {
-        *blend_src = 0;
-        *blend_dst = 0;
-        *blend_op = 0;
-    } else {
-        *blend_src = shad__consume_blend_factor(p);
-        *blend_dst = shad__consume_blend_factor(p);
-        *blend_op = shad__consume_blend_op(p);
-        if (!*blend_src) SHAD_ERROR(*blend_code_location, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
-        if (!*blend_dst) SHAD_ERROR(*blend_code_location, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
-        if (!*blend_op) SHAD_ERROR(*blend_code_location, "Invalid blend operation. Options are: add, subtract, rev_subtract, min, max");
-    }
-    return 1;
-
-    error:
-    return 0;
-}
 
 ShadTextureFormat shad__consume_texture_format(ShadParser *p) {
     if (shad__match_identifier(p, "r8")) return SHAD_TEXTURE_FORMAT_R8;
@@ -440,7 +536,7 @@ ShadBlendOp shad__consume_blend_op(ShadParser *p) {
 }
 
 char* shad__consume_texture(ShadParser *p) {
-    char *format = 0;
+    char *format = NULL;
     if (shad__match(p, "(")) {
         while (1) {
             if (shad__match(p, ",")) continue;
@@ -454,17 +550,48 @@ char* shad__consume_texture(ShadParser *p) {
     return format;
 }
 
-ShadBool shad__glslang(glslang_stage_t stage, ShadArena *arena, char *code, size_t code_size, uint32_t **result_code, size_t *result_code_size) {
-    const char *shaderSource = code;
+ShadBool shad__consume_blend(ShadParser *p, ShadCodeLocation *blend_code_location, ShadBlendFactor *blend_src, ShadBlendFactor *blend_dst, ShadBlendOp *blend_op) {
+    blend_code_location->start = p->data;
+    blend_code_location->pos = p->s;
+    blend_code_location->path = p->file->path;
 
+    if (shad__match_identifier(p, "default")) {
+        *blend_src = SHAD_BLEND_FACTOR_SRC_ALPHA;
+        *blend_dst = SHAD_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        *blend_op = SHAD_BLEND_OP_ADD;
+    } else if (shad__match_identifier(p, "off")) {
+        *blend_src = 0;
+        *blend_dst = 0;
+        *blend_op = 0;
+    } else {
+        *blend_src = shad__consume_blend_factor(p);
+        *blend_dst = shad__consume_blend_factor(p);
+        *blend_op = shad__consume_blend_op(p);
+        if (!*blend_src) SHAD_ERROR(*blend_code_location, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
+        if (!*blend_dst) SHAD_ERROR(*blend_code_location, "Invalid source blend factor. Options are: zero, one, src_color, one_minus_src_color, dst_color, one_minus_dst_color, src_alpha, one_minus_src_alpha, dst_alpha, one_minus_dst_alpha, constant_color, one_minus_constant_color, src_alpha_saturate");
+        if (!*blend_op) SHAD_ERROR(*blend_code_location, "Invalid blend operation. Options are: add, subtract, rev_subtract, min, max");
+    }
+    return 1;
+
+    error:
+    return 0;
+}
+
+ShadBool shad__glslang(glslang_stage_t stage, ShadArena *arena, char *code, char **code_out, int *code_size_out) {
     glslang_input_t input = {0};
+    glslang_shader_t* shader = NULL;
+    glslang_program_t* program = NULL;
+    const char *spirv_messages = NULL;
+    int result_code_size = 0;
+    char *result_code = NULL;
+
     input.language = GLSLANG_SOURCE_GLSL;
     input.stage = stage;
     input.client = GLSLANG_CLIENT_VULKAN;
     input.client_version = GLSLANG_TARGET_VULKAN_1_0;
     input.target_language = GLSLANG_TARGET_SPV;
     input.target_language_version = GLSLANG_TARGET_SPV_1_0;
-    input.code = shaderSource;
+    input.code = code;
     input.default_version = 100;
     input.default_profile = GLSLANG_NO_PROFILE;
     input.force_default_version_and_profile = false;
@@ -472,15 +599,14 @@ ShadBool shad__glslang(glslang_stage_t stage, ShadArena *arena, char *code, size
     input.messages = GLSLANG_MSG_DEFAULT_BIT;
     input.resource = glslang_default_resource();
 
-    glslang_shader_t* shader = glslang_shader_create(&input);
+    shader = glslang_shader_create(&input);
 
     if (!glslang_shader_preprocess(shader, &input)) {
         fprintf(stderr, "GLSL preprocessing failed\n");
         fprintf(stderr, "%s\n", glslang_shader_get_info_log(shader));
         fprintf(stderr, "%s\n", glslang_shader_get_info_debug_log(shader));
         fprintf(stderr, "%s\n", input.code);
-        glslang_shader_delete(shader);
-        return 0;
+        goto error;
     }
 
     if (!glslang_shader_parse(shader, &input)) {
@@ -488,57 +614,43 @@ ShadBool shad__glslang(glslang_stage_t stage, ShadArena *arena, char *code, size
         fprintf(stderr, "%s\n", glslang_shader_get_info_log(shader));
         fprintf(stderr, "%s\n", glslang_shader_get_info_debug_log(shader));
         fprintf(stderr, "%s\n", glslang_shader_get_preprocessed_code(shader));
-        glslang_shader_delete(shader);
-        return 0;
+        goto error;
     }
 
-    glslang_program_t* program = glslang_program_create();
+    program = glslang_program_create();
     glslang_program_add_shader(program, shader);
 
     if (!glslang_program_link(program, GLSLANG_MSG_SPV_RULES_BIT | GLSLANG_MSG_VULKAN_RULES_BIT)) {
         fprintf(stderr, "GLSL linking failed\n");
         fprintf(stderr, "%s\n", glslang_program_get_info_log(program));
         fprintf(stderr, "%s\n", glslang_program_get_info_debug_log(program));
-        glslang_program_delete(program);
-        glslang_shader_delete(shader);
-        return 0;
+        goto error;
     }
 
     glslang_program_SPIRV_generate(program, stage);
 
-    size_t size = glslang_program_SPIRV_get_size(program);
-    uint32_t *words = SHAD_ALLOC(uint32_t, arena, size);
-    glslang_program_SPIRV_get(program, words);
+    result_code_size = (int)glslang_program_SPIRV_get_size(program)*4;
+    result_code = SHAD_ALLOC(char, arena, result_code_size);
+    glslang_program_SPIRV_get(program, (unsigned*)result_code);
 
-    const char* spirv_messages = glslang_program_SPIRV_get_messages(program);
+    spirv_messages = glslang_program_SPIRV_get_messages(program);
     if (spirv_messages)
         fprintf(stderr, "%s\b", spirv_messages);
 
     glslang_program_delete(program);
     glslang_shader_delete(shader);
 
-    *result_code = words;
-    *result_code_size = size;
+    *code_out = result_code;
+    *code_size_out = result_code_size;
     return 1;
+
+    error:
+    if (shader) glslang_shader_delete(shader);
+    if (program) glslang_program_delete(program);
+    return 0;
 }
 
 ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResult *result) {
-    ShadArena tmp = {0};
-    ShadArena arena = {0};
-
-    memset(result, 0, sizeof(*result));
-
-    int code_len;
-    char *code = shad__read_file(&tmp, path, &code_len);
-    char *code_end = code + code_len;
-    if (!code) return fprintf(stderr, "%s: Couldn't open file\n", path), 0;
-
-    enum {START, VERT, MID, FRAG, END} state = START;
-
-    ShadFile *file_info = SHAD_ALLOC(ShadFile, &tmp, 1);
-    file_info->path = (char*)path;
-    ShadParser p = {code, code, &arena, file_info};
-
     /* AST definitions */
     enum {
         ShadAstTextType,
@@ -574,23 +686,55 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
     typedef struct ShadAstFragTexture     {ShadAst base; char *format;} ShadAstFragTexture;
     typedef struct ShadAstFragUniform   {ShadAst base;} ShadAstFragUniform;
 
-    ShadCodeLocation curr_blend_code_location = {0};
-    ShadBlendFactor curr_blend_src = 0;
-    ShadBlendFactor curr_blend_dst = 0;
-    ShadBlendOp curr_blend_op = 0;
+    ShadArena tmp;
+    ShadArena arena;
+    ShadParser p;
+    ShadCodeLocation curr_blend_code_location;
+    ShadBlendFactor curr_blend_src;
+    ShadBlendFactor curr_blend_dst;
+    ShadBlendOp curr_blend_op;
+    ShadAst *ast_root;
+    ShadAst **ast_ptr;
+    ShadAst *ast;
+    char *last_pos;
+    enum {START, VERT, MID, FRAG, END} state;
+    int i, j, count;
+    ShadWriter vertex_output;
+    ShadWriter fragment_output;
 
-    ShadAst *ast_root = 0;
-    ShadAst **ast = &ast_root;
+    /* init */
+    memset(&tmp, 0, sizeof(tmp));
+    memset(&arena, 0, sizeof(arena));
+    memset(&p, 0, sizeof(p));
+    memset(&curr_blend_code_location, 0, sizeof(curr_blend_code_location));
+    curr_blend_src = 0;
+    curr_blend_dst = 0;
+    curr_blend_op = 0;
+    ast_root = NULL;
+    ast_ptr = &ast_root;
+
+    /* init result */
+    memset(result, 0, sizeof(*result));
+
+    /* init parser */
+    memset(&p, 0, sizeof(p));
+    p.arena = &arena;
+    p.file = SHAD_ALLOC(ShadFile, &tmp, 1);
+    p.file->path = (char*)path;
+    p.s = p.data = shad__read_file(&tmp, path, NULL);
+    if (!p.data) return fprintf(stderr, "%s: Couldn't open file\n", path), 0;
+
     #define SHAD_AST_PUSH(_type, ...) do { \
-        _type _ast = {_type##Type, NULL, p.file->path, p.data, p.s, ##__VA_ARGS__}; \
+        _type _ast = {{_type##Type, NULL, {p.file->path, p.data, p.s}}, ##__VA_ARGS__}; \
         _type *data = (_type*)SHAD_ALLOC(_type, &tmp, 1); \
         memcpy(data, &_ast, sizeof(_ast)); \
         *data = _ast; \
-        *ast = &data->base; \
-        ast = &data->base.next; \
+        *ast_ptr = &data->base; \
+        ast_ptr = &data->base.next; \
     } while (0)
 
-    char *last_pos = p.s;
+    last_pos = p.s;
+    state = START;
     while (p.file) {
         if (*p.s != '@' && *p.s != 0) {++p.s; continue;}
 
@@ -610,33 +754,38 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
         }
 
         if (shad__match_identifier(&p, "@import")) {
+            char *import_start;
+            char *import_end;
+            const char *dir_start;
+            const char *dir_end;
+            char *file_path;
+            char *file_contents;
+            ShadFile *file;
             if (!shad__match(&p, "\"")) SHAD_PARSE_ERROR("Expected file to import");
-            char *import_start = p.s;
+            import_start = p.s;
             while (*p.s && *p.s != '"') ++p.s;
-            char *import_end = p.s;
+            import_end = p.s;
             if (!shad__match(&p, "\"")) SHAD_PARSE_ERROR("No end to import file path");
 
             /* find file */
-            const char *dir_start = path;
-            const char *dir_end = path + strlen(path);
+            dir_start = path;
+            dir_end = path + strlen(path);
             while (dir_end >= path && *dir_end != '/' && *dir_end != '\\') --dir_end;
             ++dir_end;
 
-            char *file = shad__strcat(&tmp, dir_start, dir_end, import_start, import_end, 0);
-
-            int contents_len;
-            char *contents = shad__read_file(&tmp, file, &contents_len);
-            if (!contents) SHAD_PARSE_ERROR("'%s': No such file", file);
+            file_path = shad__strcat(&tmp, dir_start, dir_end, import_start, import_end, 0);
+            file_contents = shad__read_file(&tmp, file_path, NULL);
+            if (!file_contents) SHAD_PARSE_ERROR("'%s': No such file", file_path);
 
             /* splice in the contents. This is so that the imported code also gets parsed */
-            ShadFile *f = SHAD_ALLOC(ShadFile, &tmp, 1);
-            f->next = p.file;
-            f->path = file;
-            f->prev_data = p.data;
-            f->prev_s = p.s;
-            p.file = f;
-            p.data = contents;
-            p.s = contents;
+            file = SHAD_ALLOC(ShadFile, &tmp, 1);
+            file->next = p.file;
+            file->path = file_path;
+            file->prev_data = p.data;
+            file->prev_s = p.s;
+            p.file = file;
+            p.data = file_contents;
+            p.s = file_contents;
             goto next_token;
         }
 
@@ -648,7 +797,6 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
 
         switch (state) {
         case START:
-
             if (shad__match_identifier(&p, "@vert")) {
                 state = VERT;
             }
@@ -718,9 +866,9 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
                         else if (shad__match_identifier(&p, "buffer")) {
                             if (!shad__match(&p, "=")) SHAD_PARSE_ERROR("Expected '=' after 'buffer'. Example: @in(buffer=1) vec4 color;");
                             shad__consume_whitespace(&p);
-                            if (!isdigit(*p.s)) SHAD_PARSE_ERROR("Expected buffer number. Example: @in(buffer=1) vec4 color;");
+                            if (!shad__isdigit(*p.s)) SHAD_PARSE_ERROR("Expected buffer number. Example: @in(buffer=1) vec4 color;");
                             attr.buffer_slot = 0;
-                            while (isdigit(*p.s))
+                            while (shad__isdigit(*p.s))
                                 attr.buffer_slot *= 10, attr.buffer_slot += *p.s - '0', ++p.s;
                         }
                         else if (shad__match_identifier(&p, "type")) {
@@ -892,70 +1040,51 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
     }
 
     /* count number of stuff */
-    int num_vertex_inputs = 0;
-    int num_vertex_outputs = 0;
-    int num_vertex_samplers = 0;
-    int num_vertex_images = 0;
-    int num_vertex_buffers = 0;
-    int num_vertex_uniforms = 0;
-    int num_fragment_outputs = 0;
-    int num_fragment_samplers = 0;
-    int num_fragment_images = 0;
-    int num_fragment_buffers = 0;
-    int num_fragment_uniforms = 0;
-    for (ShadAst *node = ast_root; node; node = node->next) {
-        num_vertex_inputs += node->type == ShadAstVertInType;
-        num_vertex_outputs += node->type == ShadAstVertOutType;
-        num_vertex_samplers += node->type == ShadAstVertSamplerType;
-        num_vertex_images += node->type == ShadAstVertTextureType;
-        num_vertex_buffers += node->type == ShadAstVertBufferType;
-        num_vertex_uniforms += node->type == ShadAstVertUniformType;
-        num_fragment_outputs += node->type == ShadAstFragOutType;
-        num_fragment_samplers += node->type == ShadAstFragSamplerType;
-        num_fragment_images += node->type == ShadAstFragTextureType;
-        num_fragment_buffers += node->type == ShadAstFragBufferType;
-        num_fragment_uniforms += node->type == ShadAstFragUniformType;
+    for (ast = ast_root; ast; ast = ast->next) {
+        result->num_vertex_inputs     += ast->type == ShadAstVertInType;
+        result->num_vertex_outputs    += ast->type == ShadAstVertOutType;
+        result->num_vertex_samplers   += ast->type == ShadAstVertSamplerType;
+        result->num_vertex_images     += ast->type == ShadAstVertTextureType;
+        result->num_vertex_buffers    += ast->type == ShadAstVertBufferType;
+        result->num_vertex_uniforms   += ast->type == ShadAstVertUniformType;
+        result->num_fragment_outputs  += ast->type == ShadAstFragOutType;
+        result->num_fragment_samplers += ast->type == ShadAstFragSamplerType;
+        result->num_fragment_images   += ast->type == ShadAstFragTextureType;
+        result->num_fragment_buffers  += ast->type == ShadAstFragBufferType;
+        result->num_fragment_uniforms += ast->type == ShadAstFragUniformType;
     }
 
     /* gather all the vertex inputs */
-    ShadVertexInput *vertex_inputs = SHAD_ALLOC(ShadVertexInput, &arena, num_vertex_inputs);
-    {
-        int vertex_input_index = 0;
-        for (ShadAst *node = ast_root; node; node = node->next)
-            if (node->type == ShadAstVertInType)
-                vertex_inputs[vertex_input_index++] = ((ShadAstVertIn*)node)->attr;
-    }
+    result->vertex_inputs = SHAD_ALLOC(ShadVertexInput, &arena, result->num_vertex_inputs);
+    for (i = 0, ast = ast_root; ast; ast = ast->next)
+        if (ast->type == ShadAstVertInType)
+            result->vertex_inputs[i++] = ((ShadAstVertIn*)ast)->attr;
 
     /* gather vertex input buffers */
-    ShadVertexInputBuffer *vertex_input_buffers = NULL;
-    int num_vertex_input_buffers = 0;
-    {
-        int max_vertex_input_buffer_slot = 0;
-        for (int i = 0; i < num_vertex_inputs; ++i)
-            max_vertex_input_buffer_slot = SHAD_MAX(max_vertex_input_buffer_slot, vertex_inputs[i].buffer_slot+1);
-        vertex_input_buffers = SHAD_ALLOC(ShadVertexInputBuffer, &arena, max_vertex_input_buffer_slot);
-        for (int i = 0; i < num_vertex_inputs; ++i) {
-            ShadVertexInput *in = vertex_inputs + i;
-            ShadVertexInputBuffer *buffer = NULL;
-            for (int j = 0; j < num_vertex_input_buffers; ++j)
-                if (vertex_input_buffers[j].slot == in->buffer_slot)
-                    {buffer = &vertex_input_buffers[j]; break;}
-            if (!buffer) {
-                buffer = &vertex_input_buffers[num_vertex_input_buffers++];
-                buffer->slot = in->buffer_slot;
-                buffer->instanced = in->instanced;
-            }
-            else if (buffer->instanced != in->instanced)
-                SHAD_ERROR(in->code_location, "All attributes for buffer %i must be specified as instanced", in->buffer_slot);
+    for (i = 0, count = 0; i < result->num_vertex_inputs; ++i)
+        count = SHAD_MAX(count, result->vertex_inputs[i].buffer_slot+1);
+    result->vertex_input_buffers = SHAD_ALLOC(ShadVertexInputBuffer, &arena, count);
+    for (i = 0; i < result->num_vertex_inputs; ++i) {
+        ShadVertexInput *in = result->vertex_inputs + i;
+        ShadVertexInputBuffer *buffer = NULL;
+        for (j = 0; j < result->num_vertex_input_buffers; ++j)
+            if (result->vertex_input_buffers[j].slot == in->buffer_slot)
+                {buffer = &result->vertex_input_buffers[j]; break;}
+        if (!buffer) {
+            buffer = &result->vertex_input_buffers[result->num_vertex_input_buffers++];
+            buffer->slot = in->buffer_slot;
+            buffer->instanced = in->instanced;
         }
+        else if (buffer->instanced != in->instanced)
+            SHAD_ERROR(in->code_location, "All attributes for buffer %i must be specified as instanced", in->buffer_slot);
     }
 
     /* calculate stride of vertex input buffers */
-    for (int i = 0; i < num_vertex_input_buffers; ++i) {
-        ShadVertexInputBuffer *bi = vertex_input_buffers + i;
+    for (i = 0; i < result->num_vertex_input_buffers; ++i) {
         int size = 0, align = 0;
-        for (int j = 0; j < num_vertex_inputs; ++j) {
-            ShadVertexInput *vi = &vertex_inputs[j];
+        ShadVertexInputBuffer *bi = result->vertex_input_buffers + i;
+        for (j = 0; j < result->num_vertex_inputs; ++j) {
+            ShadVertexInput *vi = &result->vertex_inputs[j];
             if (vi->buffer_slot != bi->slot) continue;
             size = ((size + vi->align - 1) & ~(vi->align - 1)) + vi->size;
             align = SHAD_MAX(align, vi->align);
@@ -965,17 +1094,16 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
     }
 
     /* gather fragment outputs */
-    ShadFragmentOutput *fragment_outputs = SHAD_ALLOC(ShadFragmentOutput, &arena, num_fragment_outputs);
-    {
-        int fragment_output_index = 0;
-        for (ShadAst *node = ast_root; node; node = node->next)
-            if (node->type == ShadAstFragOutType)
-                fragment_outputs[fragment_output_index++] = ((ShadAstFragOut*)node)->out;
-    }
+    result->fragment_outputs = SHAD_ALLOC(ShadFragmentOutput, &arena, result->num_fragment_outputs);
+    for (i = 0, ast = ast_root; ast; ast = ast->next)
+        if (ast->type == ShadAstFragOutType)
+            result->fragment_outputs[i++] = ((ShadAstFragOut*)ast)->out;
 
     /* write output shaders */
-    ShadWriter vertex_output = {&arena};
-    ShadWriter fragment_output = {&arena};
+    memset(&vertex_output, 0, sizeof(vertex_output));
+    memset(&fragment_output, 0, sizeof(fragment_output));
+    vertex_output.arena = &arena;
+    fragment_output.arena = &arena;
     shad__writer_print(&vertex_output, "#version 450\n");
     shad__writer_print(&fragment_output, "#version 450\n");
 
@@ -984,50 +1112,50 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
             int vertex_input_index = 0;
             int vertex_output_index = 0;
             int vertex_sampler_index = 0;
-            int vertex_image_index = num_vertex_samplers;
-            int vertex_buffer_index = num_vertex_samplers + num_vertex_images;
+            int vertex_image_index = result->num_vertex_samplers;
+            int vertex_buffer_index = result->num_vertex_samplers + result->num_vertex_images;
             int vertex_uniform_index = 0;
             int fragment_output_index = 0;
             int fragment_sampler_index = 0;
-            int fragment_image_index = num_fragment_samplers;
-            int fragment_buffer_index = num_fragment_samplers + num_fragment_images;
+            int fragment_image_index = result->num_fragment_samplers;
+            int fragment_buffer_index = result->num_fragment_samplers + result->num_fragment_images;
             int fragment_uniform_index = 0;
-            for (ShadAst *node = ast_root; node; node = node->next) {
-                switch (node->type) {
+            for (ast = ast_root; ast; ast = ast->next) {
+                switch (ast->type) {
                     case ShadAstTextType:
                     case ShadAstVertTextType:
                     case ShadAstFragTextType: {
-                        ShadAstText *text = (ShadAstText*)node;
-                        if (node->type == ShadAstVertTextType || node->type == ShadAstTextType)
-                            shad__writer_print(&vertex_output, "%.*s", (int)(text->end - text->start), text->start);
-                        if (node->type == ShadAstFragTextType || node->type == ShadAstTextType)
-                            shad__writer_print(&fragment_output, "%.*s", (int)(text->end - text->start), text->start);
+                        ShadAstText *text = (ShadAstText*)ast;
+                        if (ast->type == ShadAstVertTextType || ast->type == ShadAstTextType)
+                            shad__writer_print(&vertex_output, "%S", text->start, text->end);
+                        if (ast->type == ShadAstFragTextType || ast->type == ShadAstTextType)
+                            shad__writer_print(&fragment_output, "%S", text->start, text->end);
                         break;
                     }
                     case ShadAstVertInType: {
-                        ShadAstVertIn *in = (ShadAstVertIn*)node;
+                        ShadAstVertIn *in = (ShadAstVertIn*)ast;
                         shad__writer_print(&vertex_output, "layout(location = %i) in%s%s %s", vertex_input_index, in->attr.is_flat ? " flat " : " ", in->attr.data_type, in->attr.name);
                         ++vertex_input_index;
                         break;
                     }
                     case ShadAstVertOutType: {
-                        ShadAstVertOut *out = (ShadAstVertOut*)node;
+                        ShadAstVertOut *out = (ShadAstVertOut*)ast;
                         char *rest = out->base.code_location.pos;
-                        int rest_len = 0;
-                        while (rest[rest_len] && rest[rest_len] != ';') ++rest_len;
-                        shad__writer_print(&vertex_output, "layout(location = %i) out%.*s", vertex_output_index, rest_len, rest);
-                        shad__writer_print(&fragment_output, "layout(location = %i) in%.*s;", vertex_output_index, rest_len, rest);
+                        char *rest_end = rest;
+                        while (*rest_end && *rest_end != ';') ++rest_end;
+                        shad__writer_print(&vertex_output, "layout(location = %i) out%S", vertex_output_index, rest, rest_end);
+                        shad__writer_print(&fragment_output, "layout(location = %i) in%S;", vertex_output_index, rest, rest_end);
                         ++vertex_output_index;
                         break;
                     }
                     case ShadAstVertSamplerType: shad__writer_print(&vertex_output, "layout(set = 0, binding = %i) uniform", vertex_sampler_index), ++vertex_sampler_index; break;
                     case ShadAstVertTextureType: {
-                        ShadAstVertTexture *tex = (ShadAstVertTexture*)node;
+                        ShadAstVertTexture *tex = (ShadAstVertTexture*)ast;
                         shad__writer_print(&vertex_output, "layout(set = 0, binding = %i, %s) uniform image2D", vertex_image_index, tex->format), ++vertex_image_index; break;
                         break;
                     }
                     case ShadAstVertBufferType: {
-                        ShadAstVertBuffer *buf = (ShadAstVertBuffer*)node;
+                        ShadAstVertBuffer *buf = (ShadAstVertBuffer*)ast;
                         shad__writer_print(&vertex_output, "layout(std140, set = 0, binding = %i) buffer%s Buffer%i", vertex_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? "writeonly" : "", vertex_buffer_index);
                         ++vertex_buffer_index;
                         break;
@@ -1036,12 +1164,12 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
                     case ShadAstFragOutType:     shad__writer_print(&fragment_output, "layout(location = %i) out", fragment_output_index), ++fragment_output_index; break;
                     case ShadAstFragSamplerType: shad__writer_print(&fragment_output, "layout(set = 2, binding = %i) uniform", fragment_sampler_index), ++fragment_sampler_index; break;
                     case ShadAstFragTextureType: {
-                        ShadAstFragTexture *tex = (ShadAstFragTexture*)node;
+                        ShadAstFragTexture *tex = (ShadAstFragTexture*)ast;
                         shad__writer_print(&fragment_output, "layout(set = 2, binding = %i, %s) uniform image2D", fragment_image_index, tex->format), ++fragment_image_index; break;
                         break;
                     }
                     case ShadAstFragBufferType: {
-                        ShadAstFragBuffer *buf = (ShadAstFragBuffer*)node;
+                        ShadAstFragBuffer *buf = (ShadAstFragBuffer*)ast;
                         shad__writer_print(&fragment_output, "layout(std140, set = 2, binding = %i) buffer%s Buffer%i", fragment_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? "writeonly" : "", fragment_buffer_index);
                         ++fragment_buffer_index;
                         break;
@@ -1054,35 +1182,16 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
         default: return fprintf(stderr, "Invalid output format"), 0;
     }
 
-    /* record some results */
-    result->vertex_inputs = vertex_inputs;
-    result->num_vertex_inputs = num_vertex_inputs;
-    result->vertex_input_buffers = vertex_input_buffers;
-    result->num_vertex_input_buffers = num_vertex_input_buffers;
-    result->num_vertex_outputs = num_vertex_outputs;
-    result->num_vertex_samplers = num_vertex_samplers;
-    result->num_vertex_images = num_vertex_images;
-    result->num_vertex_buffers = num_vertex_buffers;
-    result->num_vertex_uniforms = num_vertex_uniforms;
-    result->fragment_outputs = fragment_outputs;
-    result->num_fragment_outputs = num_fragment_outputs;
-    result->num_fragment_samplers = num_fragment_samplers;
-    result->num_fragment_images = num_fragment_images;
-    result->num_fragment_buffers = num_fragment_buffers;
-    result->num_fragment_uniforms = num_fragment_uniforms;
-
     /* convert output code to SPIRV */
     result->vertex_code = vertex_output.buf;
     result->vertex_code_size = vertex_output.len;
-    if (!shad__glslang(GLSLANG_STAGE_VERTEX, &arena, result->vertex_code, result->vertex_code_size, &result->spirv_vertex_code, &result->spirv_vertex_code_size))
+    if (!shad__glslang(GLSLANG_STAGE_VERTEX, &arena, result->vertex_code, &result->spirv_vertex_code, &result->spirv_vertex_code_size))
         return 0;
-    result->spirv_vertex_code_size *= 4;
     if (result->has_fragment_shader) {
         result->fragment_code = fragment_output.buf;
         result->fragment_code_size = fragment_output.len;
-        if (!shad__glslang(GLSLANG_STAGE_FRAGMENT, &arena, result->fragment_code, result->fragment_code_size, &result->spirv_fragment_code, &result->spirv_fragment_code_size))
+        if (!shad__glslang(GLSLANG_STAGE_FRAGMENT, &arena, result->fragment_code, &result->spirv_fragment_code, &result->spirv_fragment_code_size))
             return 0;
-        result->spirv_fragment_code_size *= 4;
     }
 
     /* move the arena into the result */
@@ -1107,36 +1216,34 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
 
 #endif /* SHAD_COMPILER */
 
-void shad__serialize_spirv_to_code(ShadWriter *w, uint32_t *spirv, int spirv_size) {
-    assert(spirv_size % 4 == 0);
-    for (int i = 0; i < spirv_size/4; ++i) {
-        shad__writer_print(w, "%#x,", spirv[i]);
-    }
+void shad__serialize_spirv_to_code(ShadWriter *w, char *spirv, int spirv_size) {
+    while (spirv_size) shad__writer_print(w, "%x,", *(unsigned*)spirv), spirv += 4, spirv_size -= 4;
 }
 
-void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char **code_out, size_t *num_bytes_out) {
+void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char **code_out, int *num_bytes_out) {
     ShadResult *result = (ShadResult*)shad_result;
     ShadArena tmp = {0};
-    ShadWriter writer = {&tmp};
+    ShadWriter writer = {&tmp, NULL, 0, 0};
+    int i;
 
     /* vertex spirv */
-    shad__writer_print(&writer, "uint32_t shad__spirv_vertex_code_%s[%i] = {", name, (int)result->spirv_vertex_code_size);
+    shad__writer_print(&writer, "unsigned shad__spirv_vertex_code_%s[%i] = {", name, (int)result->spirv_vertex_code_size/4);
     shad__serialize_spirv_to_code(&writer, result->spirv_vertex_code, result->spirv_vertex_code_size);
     shad__writer_print(&writer, "};\n");
 
     /* fragment spirv */
     if (result->has_fragment_shader) {
-        shad__writer_print(&writer, "uint32_t shad__spirv_fragment_code_%s[%i] = {", name, (int)result->spirv_fragment_code_size);
+        shad__writer_print(&writer, "unsigned shad__spirv_fragment_code_%s[%i] = {", name, (int)result->spirv_fragment_code_size/4);
         shad__serialize_spirv_to_code(&writer, result->spirv_fragment_code, result->spirv_fragment_code_size);
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "uint32_t shad__spirv_fragment_code_%s[1] = {0}", name);
+        shad__writer_print(&writer, "unsigned shad__spirv_fragment_code_%s[1] = {0}", name);
     }
 
     /* vertex inputs */
     if (result->num_vertex_inputs) {
         shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[%i] = {\n", name, (int)result->num_vertex_inputs);
-        for (int i = 0; i < result->num_vertex_inputs; ++i) {
+        for (i = 0; i < result->num_vertex_inputs; ++i) {
             ShadVertexInput *in = result->vertex_inputs + i;
             shad__writer_print(&writer,
             "    {\n"
@@ -1165,7 +1272,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
     /* vertex input buffers */
     if (result->num_vertex_input_buffers) {
         shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[%i] = {\n", name, (int)result->num_vertex_input_buffers);
-        for (int i = 0; i < result->num_vertex_input_buffers; ++i) {
+        for (i = 0; i < result->num_vertex_input_buffers; ++i) {
             ShadVertexInputBuffer *in = result->vertex_input_buffers + i;
             shad__writer_print(&writer,
             "    {\n"
@@ -1185,7 +1292,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
     /* fragment outputs */
     if (result->num_fragment_outputs) {
         shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[%i] = {\n", name, (int)result->num_fragment_outputs);
-        for (int i = 0; i < result->num_fragment_outputs; ++i) {
+        for (i = 0; i < result->num_fragment_outputs; ++i) {
             ShadFragmentOutput *fout = result->fragment_outputs + i;
             shad__writer_print(&writer,
             "    {\n"
@@ -1211,7 +1318,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
         "ShadResult shad__result_%s = {\n"
         "    NULL, /* vertex_code */\n"
         "    0, /* vertex_code_size */\n"
-        "    shad__spirv_vertex_code_%s, /* spirv_vertex_code */\n"
+        "    (char*)shad__spirv_vertex_code_%s, /* spirv_vertex_code */\n"
         "    %i, /* spirv_vertex_code_size */\n"
         "    shad__vertex_inputs_%s, /* vertex_inputs */\n"
         "    %i, /* num_vertex_inputs */\n"
@@ -1225,7 +1332,7 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
         "    %i, /* has_fragment_shader */\n"
         "    NULL, /* fragment_code */\n"
         "    0, /* fragment_code_size */\n"
-        "    shad__spirv_fragment_code_%s, /* spirv_fragment_code */\n"
+        "    (char*)shad__spirv_fragment_code_%s, /* spirv_fragment_code */\n"
         "    %i, /* spirv_fragment_code_size */\n"
         "    shad__fragment_outputs_%s, /* fragment_outputs */\n"
         "    %i, /* num_fragment_outputs */\n"
@@ -1286,9 +1393,10 @@ void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char *
     shad__arena_destroy(&tmp);
 }
 
-void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_bytes_out) {
+void shad_serialize(const ShadResult *compiled, char **bytes_out, int *num_bytes_out) {
     ShadArena tmp = {0};
-    ShadWriter writer = {&tmp};
+    ShadWriter writer = {&tmp, NULL, 0, 0};
+    int i;
 
     #define SHAD_WRITE_N(ptr, size) shad__writer_push(&writer, (char*)(ptr), size);
     #define SHAD_WRITE(ptr) SHAD_WRITE_N(ptr, sizeof(*(ptr)))
@@ -1297,14 +1405,14 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
     SHAD_WRITE(&compiled->spirv_vertex_code_size);
     SHAD_WRITE_N(compiled->spirv_vertex_code, compiled->spirv_vertex_code_size);
     SHAD_WRITE(&compiled->num_vertex_inputs);
-    for (int i = 0; i < compiled->num_vertex_inputs; ++i) {
+    for (i = 0; i < compiled->num_vertex_inputs; ++i) {
         SHAD_WRITE(&compiled->vertex_inputs[i].format);
         SHAD_WRITE(&compiled->vertex_inputs[i].buffer_slot);
         SHAD_WRITE(&compiled->vertex_inputs[i].offset);
         SHAD_WRITE(&compiled->vertex_inputs[i].instanced);
     }
     SHAD_WRITE(&compiled->num_vertex_input_buffers);
-    for (int i = 0; i < compiled->num_vertex_input_buffers; ++i) {
+    for (i = 0; i < compiled->num_vertex_input_buffers; ++i) {
         SHAD_WRITE(&compiled->vertex_input_buffers[i].slot);
         SHAD_WRITE(&compiled->vertex_input_buffers[i].instanced);
         SHAD_WRITE(&compiled->vertex_input_buffers[i].stride);
@@ -1321,7 +1429,7 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
     SHAD_WRITE(&compiled->spirv_fragment_code_size);
     SHAD_WRITE_N(compiled->spirv_fragment_code, compiled->spirv_fragment_code_size);
     SHAD_WRITE(&compiled->num_fragment_outputs);
-    for (int i = 0; i < compiled->num_fragment_outputs; ++i) {
+    for (i = 0; i < compiled->num_fragment_outputs; ++i) {
         SHAD_WRITE(&compiled->fragment_outputs[i].format);
         SHAD_WRITE(&compiled->fragment_outputs[i].blend_src);
         SHAD_WRITE(&compiled->fragment_outputs[i].blend_dst);
@@ -1351,7 +1459,7 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
     char *result = (char*)malloc(writer.len+1);
     memcpy(result, writer.buf, writer.len+1);
     *bytes_out = result;
-    *num_bytes_out = (size_t)writer.len;
+    *num_bytes_out = writer.len;
 
     /* destroy arena */
     shad__arena_destroy(&tmp);
@@ -1361,14 +1469,17 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, size_t *num_by
     #undef SHAD_WRITE
 }
 
-ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
+ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *compiled) {
+    ShadArena arena;
+    int num_bytes_remaining;
+    int i;
+
+    memset(&arena, 0, sizeof(arena));
+    num_bytes_remaining = (int)num_bytes;
     memset(compiled, 0, sizeof(*compiled));
 
-    ShadArena arena = {0};
-    int num_bytes_remaining = (int)num_bytes;
-
     #define SHAD_READ_N(ptr, size) do { \
-        size_t s = size; \
+        int s = size; \
         if (num_bytes_remaining < s) goto err; \
         memcpy(ptr, bytes, s); \
         bytes += s; \
@@ -1378,11 +1489,11 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
 
     /* vertex shader info */
     SHAD_READ(&compiled->spirv_vertex_code_size);
-    compiled->spirv_vertex_code = SHAD_ALLOC(uint32_t, &arena, compiled->spirv_vertex_code_size/4);
+    compiled->spirv_vertex_code = SHAD_ALLOC(char, &arena, compiled->spirv_vertex_code_size);
     SHAD_READ_N(compiled->spirv_vertex_code, compiled->spirv_vertex_code_size);
     SHAD_READ(&compiled->num_vertex_inputs);
     compiled->vertex_inputs = SHAD_ALLOC(ShadVertexInput, &arena, compiled->num_vertex_inputs);
-    for (int i = 0; i < compiled->num_vertex_inputs; ++i) {
+    for (i = 0; i < compiled->num_vertex_inputs; ++i) {
         SHAD_READ(&compiled->vertex_inputs[i].format);
         SHAD_READ(&compiled->vertex_inputs[i].buffer_slot);
         SHAD_READ(&compiled->vertex_inputs[i].offset);
@@ -1390,7 +1501,7 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
     }
     SHAD_READ(&compiled->num_vertex_input_buffers);
     compiled->vertex_input_buffers = SHAD_ALLOC(ShadVertexInputBuffer, &arena, compiled->num_vertex_input_buffers);
-    for (int i = 0; i < compiled->num_vertex_input_buffers; ++i) {
+    for (i = 0; i < compiled->num_vertex_input_buffers; ++i) {
         SHAD_READ(&compiled->vertex_input_buffers[i].slot);
         SHAD_READ(&compiled->vertex_input_buffers[i].instanced);
         SHAD_READ(&compiled->vertex_input_buffers[i].stride);
@@ -1405,11 +1516,11 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
     /* fragment shader info */
     SHAD_READ(&compiled->has_fragment_shader);
     SHAD_READ(&compiled->spirv_fragment_code_size);
-    compiled->spirv_fragment_code = SHAD_ALLOC(uint32_t, &arena, compiled->spirv_fragment_code_size/4);
+    compiled->spirv_fragment_code = SHAD_ALLOC(char, &arena, compiled->spirv_fragment_code_size);
     SHAD_READ_N(compiled->spirv_fragment_code, compiled->spirv_fragment_code_size);
     SHAD_READ(&compiled->num_fragment_outputs);
     compiled->fragment_outputs = SHAD_ALLOC(ShadFragmentOutput, &arena, compiled->num_fragment_outputs);
-    for (int i = 0; i < compiled->num_fragment_outputs; ++i) {
+    for (i = 0; i < compiled->num_fragment_outputs; ++i) {
         SHAD_READ(&compiled->fragment_outputs[i].format);
         SHAD_READ(&compiled->fragment_outputs[i].blend_src);
         SHAD_READ(&compiled->fragment_outputs[i].blend_dst);
@@ -1437,9 +1548,11 @@ ShadBool shad_deserialize(char *bytes, size_t num_bytes, ShadResult *compiled) {
 
     if (num_bytes_remaining) goto err;
 
-    ShadArena *arena_on_heap = SHAD_ALLOC(ShadArena, &arena, 1);
-    *arena_on_heap = arena;
-    compiled->arena = arena_on_heap;
+    {
+        ShadArena *arena_on_heap = SHAD_ALLOC(ShadArena, &arena, 1);
+        *arena_on_heap = arena;
+        compiled->arena = arena_on_heap;
+    }
 
     return 1;
 
@@ -1613,6 +1726,8 @@ void shad_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, ShadResult 
 }
 
 void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResult *compiled) {
+    int i;
+
     memset(info, 0, sizeof(*info));
 
     if (!compiled->arena) {
@@ -1625,24 +1740,22 @@ void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResu
     ShadArena *arena = compiled->arena;
 
     /* set vertex_input_state */
-    SDL_GPUVertexInputState* vert_info = &info->vertex_input_state;
     /* buffer descriptions */
-    vert_info->num_vertex_buffers = compiled->num_vertex_input_buffers;
-    int num_vertex_buffers = compiled->num_vertex_input_buffers;
-    SDL_GPUVertexBufferDescription *vertex_buffer_descriptions = SHAD_ALLOC(SDL_GPUVertexBufferDescription, arena, vert_info->num_vertex_buffers);
-    for (int i = 0; i < compiled->num_vertex_input_buffers; ++i) {
+    info->vertex_input_state.num_vertex_buffers = compiled->num_vertex_input_buffers;
+    SDL_GPUVertexBufferDescription *vertex_buffer_descriptions = SHAD_ALLOC(SDL_GPUVertexBufferDescription, arena, info->vertex_input_state.num_vertex_buffers);
+    for (i = 0; i < compiled->num_vertex_input_buffers; ++i) {
         SDL_GPUVertexBufferDescription *desc = &vertex_buffer_descriptions[i];
         ShadVertexInputBuffer *buf = compiled->vertex_input_buffers + i;
         desc->slot = buf->slot;
         desc->pitch = buf->stride;
         desc->input_rate = buf->instanced ? SDL_GPU_VERTEXINPUTRATE_INSTANCE : SDL_GPU_VERTEXINPUTRATE_VERTEX;
     }
-    vert_info->vertex_buffer_descriptions = vertex_buffer_descriptions;
+    info->vertex_input_state.vertex_buffer_descriptions = vertex_buffer_descriptions;
 
     /* attributes */
-    vert_info->num_vertex_attributes = compiled->num_vertex_inputs;
-    SDL_GPUVertexAttribute *vertex_attributes = SHAD_ALLOC(SDL_GPUVertexAttribute, arena, vert_info->num_vertex_attributes);
-    for (int i = 0; i < compiled->num_vertex_inputs; ++i) {
+    info->vertex_input_state.num_vertex_attributes = compiled->num_vertex_inputs;
+    SDL_GPUVertexAttribute *vertex_attributes = SHAD_ALLOC(SDL_GPUVertexAttribute, arena, info->vertex_input_state.num_vertex_attributes);
+    for (i = 0; i < compiled->num_vertex_inputs; ++i) {
         ShadVertexInput *in = compiled->vertex_inputs + i;
         SDL_GPUVertexAttribute *desc = &vertex_attributes[i];
         desc->location = i;
@@ -1650,29 +1763,25 @@ void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResu
         desc->offset = in->offset;
         desc->format = shad_to_sdl_vertex_element_format[in->format];
     }
-    vert_info->vertex_attributes = vertex_attributes;
+    info->vertex_input_state.vertex_attributes = vertex_attributes;
 
     /* rasterization */
-    SDL_GPURasterizerState *rast_info = &info->rasterizer_state;
-    rast_info->cull_mode = shad_to_sdl_cull_mode[compiled->cull_mode];
-    rast_info->enable_depth_clip = compiled->depth_clip;
+    info->rasterizer_state.cull_mode = shad_to_sdl_cull_mode[compiled->cull_mode];
+    info->rasterizer_state.enable_depth_clip = compiled->depth_clip;
 
     /* multisampling */
-    SDL_GPUMultisampleState *ms_info = &info->multisample_state;
-    ms_info->sample_count = shad_to_sdl_sample_count[compiled->multisample_count];
+    info->multisample_state.sample_count = shad_to_sdl_sample_count[compiled->multisample_count];
 
     /* depth stencil */
-    SDL_GPUDepthStencilState *ds_info = &info->depth_stencil_state;
-    ds_info->compare_op = shad_to_sdl_compare_op[compiled->depth_cmp];
-    ds_info->enable_depth_test = compiled->depth_cmp != SHAD_COMPARE_OP_INVALID;
-    ds_info->enable_depth_write = compiled->depth_write;
+    info->depth_stencil_state.compare_op = shad_to_sdl_compare_op[compiled->depth_cmp];
+    info->depth_stencil_state.enable_depth_test = compiled->depth_cmp != SHAD_COMPARE_OP_INVALID;
+    info->depth_stencil_state.enable_depth_write = compiled->depth_write;
 
     /* targets */
-    SDL_GPUGraphicsPipelineTargetInfo *target_info = &info->target_info;
-    target_info->num_color_targets = compiled->num_fragment_outputs;
-    if (target_info->num_color_targets) {
-        SDL_GPUColorTargetDescription *color_target_descriptions = SHAD_ALLOC(SDL_GPUColorTargetDescription, arena, target_info->num_color_targets);
-        for (int i = 0; i < (int)target_info->num_color_targets; ++i) {
+    info->target_info.num_color_targets = compiled->num_fragment_outputs;
+    if (info->target_info.num_color_targets) {
+        SDL_GPUColorTargetDescription *color_target_descriptions = SHAD_ALLOC(SDL_GPUColorTargetDescription, arena, info->target_info.num_color_targets);
+        for (i = 0; i < (int)info->target_info.num_color_targets; ++i) {
             SDL_GPUColorTargetDescription *desc = &color_target_descriptions[i];
             ShadFragmentOutput *out = compiled->fragment_outputs + i;
             desc->format = shad_to_sdl_texture_format[out->format];
@@ -1686,10 +1795,10 @@ void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResu
             blend->alpha_blend_op = shad_to_sdl_blend_op[out->blend_op];
             blend->enable_blend = out->blend_op != SHAD_BLEND_OP_INVALID;
         }
-        target_info->color_target_descriptions = color_target_descriptions;
+        info->target_info.color_target_descriptions = color_target_descriptions;
     }
-    target_info->depth_stencil_format = shad_to_sdl_texture_format[compiled->depth_format];
-    target_info->has_depth_stencil_target = compiled->depth_cmp != SHAD_COMPARE_OP_INVALID;
+    info->target_info.depth_stencil_format = shad_to_sdl_texture_format[compiled->depth_format];
+    info->target_info.has_depth_stencil_target = compiled->depth_cmp != SHAD_COMPARE_OP_INVALID;
 
     /* primitive */
     info->primitive_type = shad_to_sdl_primitive[compiled->primitive];
