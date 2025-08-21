@@ -106,10 +106,10 @@ Completed:
 - [x] Support Vulkan (SPIRV)
 - [x] Support serialization so you can prebake the shaders in a build step rather than having to parse and compile the shaders at runtime
 - [x] Make a command line tool for precompiling shaders
+- [x] Support Linux
 
 TODO:
 - [ ] Support compiling to D3D12
-- [ ] Support Linux
 
 # Build
 
