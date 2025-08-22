@@ -9,67 +9,72 @@ int streq(const char *a, const char *b) {
     return !strcmp(a,b);
 }
 
-void print_usage(const char **argv) {
-    fprintf(stderr, "Examples:\n");
+void print_usage(char **argv) {
+    fprintf(stderr, "Usage: shad FRAMEWORK [OPTIONS] FILES...\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "# Outputs C to stdout for SDL\n");
-    fprintf(stderr, "shad_cli.exe --output_c --sdl triangle.shader mesh.shader > my_shaders.h\n");
+    fprintf(stderr, "Compile shaders to C code for a given framework.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "# Outputs binary to stdout for SDL\n");
-    fprintf(stderr, "shad_cli.exe --output_binary --sdl triangle.shader mesh.shader > my_shaders.bin\n");
+    fprintf(stderr, "EXAMPLES:\n");
+    fprintf(stderr, "    # Outputs C code to stdout for SDL3\n");
+    fprintf(stderr, "    shad sdl3 triangle.shader mesh.shader > my_shaders.h\n");
+    fprintf(stderr, "    # Outputs C code to file for SDL3\n");
+    fprintf(stderr, "    shad sdl3 triangle.shader mesh.shader -o my_shaders.h\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "# Outputs C to file for SDL\n");
-    fprintf(stderr, "shad_cli.exe --output_c --sdl triangle.shader mesh.shader --output my_shaders.h\n");
+    fprintf(stderr, "FRAMEWORK:\n");
+    fprintf(stderr, "    sdl3: SDL3\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "# Outputs binary to file for SDL\n");
-    fprintf(stderr, "shad_cli.exe --output_binary --sdl triangle.shader mesh.shader --output my_shaders.bin\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "-h, --help: Print help\n");
-    fprintf(stderr, "-c, --output_c: Output to C code\n");
-    fprintf(stderr, "-b, --output_binary: Output to binary\n");
-    fprintf(stderr, "-o FILE, --output FILE: Output to file (if not specified, outputs to stdout)\n");
+    fprintf(stderr, "OPTIONS:\n");
+    fprintf(stderr, "    -h, --help: Print help\n");
+    fprintf(stderr, "    -o FILE, --output FILE: Output to file (if not specified, outputs to stdout)\n");
 }
 
-void get_filename(const char *path, const char **filename_out, size_t *filename_len_out) {
-    const char *p = path;
-    const char *end = path + strlen(path);
-    const char *e = end;
+void get_filename(char *path, char **filename_out, int *filename_len_out) {
+    char *p = path;
+    char *end = path + strlen(path);
+    char *e = end;
     while (e > p && *e != '.') --e;
     if (e == p) e = end;
-    const char *f = e;
+    char *f = e;
     while (f > p && *f != '/' && *f != '\\') --f;
     if (f > p) ++f;
-    size_t len = e-f;
-    char *result = malloc(len+1);
+    int len = e-f;
+    char *result = (char*)malloc(len+1);
     memcpy(result, f, len);
     result[len] = 0;
     *filename_out = result;
     *filename_len_out = len;
 }
 
-int main(int argc, const char **argv) {
-    int help = 0;
-    enum {
-        OUTPUT_TYPE_INVALID,
-        OUTPUT_TYPE_C,
-        OUTPUT_TYPE_BINARY,
-    } output_type;
-
-    const char *output_file = NULL;
-    ShadOutputFormat output_format = 0;
-
+int main(int argc, char **argv) {
     typedef struct InputFile {
-        struct InputFile *next;
-        const char *file;
-        ShadResult result;
+        char *file;
+        ShadCompilation result;
     } InputFile;
 
-    InputFile *files = NULL;
-    InputFile **curr_file = &files;
+    int help = 0;
+    char *output_file = NULL;
+    ShadOutputFormat output_format = SHAD_OUTPUT_FORMAT_INVALID;
+    InputFile *files = (InputFile*)malloc(sizeof(InputFile) * argc);
+    int num_files = 0;
 
-    for (const char **argp = argv+1; *argp; ++argp) {
-        const char *arg = *argp;
+    if (argc < 2) {
+        fprintf(stderr, "Error: No framework specified\n\n");
+        print_usage(argv);
+        return 1;
+    }
+
+    /* parse framework */
+    if (streq(argv[1], "sdl3"))
+        output_format = SHAD_OUTPUT_FORMAT_SDL;
+    else {
+        fprintf(stderr, "Error: Unknown framework: %s\n\n", argv[1]);
+        print_usage(argv);
+        return 1;
+    }
+
+    /* parse options and files */
+    for (char **argp = argv+2; *argp; ++argp) {
+        char *arg = *argp;
         if      (streq(arg, "--help") || streq(arg, "-h")) help = 1;
         else if (streq(arg, "--output") || streq(arg, "-o")) {
             if (output_file) {
@@ -85,30 +90,6 @@ int main(int argc, const char **argv) {
             output_file = argp[1];
             ++argp;
         }
-        else if (streq(arg, "--output_c") || streq(arg, "-c")) {
-            if (output_type && output_type != OUTPUT_TYPE_C) {
-                fprintf(stderr, "Error: %s conflicts with previously specified output format\n\n", arg);
-                print_usage(argv);
-                return 1;
-            }
-            output_type = OUTPUT_TYPE_C;
-        }
-        else if (streq(arg, "--output_binary") || streq(arg, "-b")) {
-            if (output_type && output_type != OUTPUT_TYPE_BINARY) {
-                fprintf(stderr, "Error: %s conflicts with previously specified output format\n\n", arg);
-                print_usage(argv);
-                return 1;
-            }
-            output_type = OUTPUT_TYPE_BINARY;
-        }
-        else if (streq(arg, "--sdl") || streq(arg, "-sdl")) {
-            if (output_format && output_format != SHAD_OUTPUT_FORMAT_SDL) {
-                fprintf(stderr, "Error: %s conflicts with previously specified output format\n\n", arg);
-                print_usage(argv);
-                return 1;
-            }
-            output_format = SHAD_OUTPUT_FORMAT_SDL;
-        }
         else {
             if (arg[0] == '-') {
                 fprintf(stderr, "Unknown option: '%s'\n\n", arg);
@@ -116,11 +97,9 @@ int main(int argc, const char **argv) {
                 return 1;
             }
 
-            InputFile *file = malloc(sizeof(InputFile));
+            InputFile *file = &files[num_files++];
             memset(file, 0, sizeof(*file));
             file->file = arg;
-            file->next = *curr_file;
-            *curr_file = file;
         }
     }
 
@@ -130,52 +109,41 @@ int main(int argc, const char **argv) {
         return 0;
     }
 
-    /* output types must be specified */
-    if (!output_type) {
-        fprintf(stderr, "Error: Output type must be specified (--output_c or --output_binary)\n\n");
-        print_usage(argv);
-        return 1;
-    }
-
     /* output format must be specified */
     if (!output_format) {
-        fprintf(stderr, "Error: Output format must be specified (e.g. --sdl for SDL3)\n\n");
+        fprintf(stderr, "Error: Output format must be specified (e.g. --framework sdl for SDL3)\n\n");
         print_usage(argv);
         return 1;
     }
 
     /* we need output files */
-    if (!files) {
+    if (!num_files) {
         fprintf(stderr, "Error: No output files specified\n\n");
         print_usage(argv);
         return 1;
     }
 
-    /* sanity check that people don't use multiple files with the same filename when using C mode */
-    if (output_type == OUTPUT_TYPE_C) {
-        for (InputFile *f = files; f; f = f->next) {
-            const char *fname;
-            size_t fname_len;
-            get_filename(f->file, &fname, &fname_len);
-            for (InputFile *f2 = files; f2; f2 = f2->next) {
-                if (f2 == f) continue;
-                const char *f2name;
-                size_t f2name_len;
-                get_filename(f2->file, &f2name, &f2name_len);
-                if (fname_len == f2name_len && memcmp(fname, f2name, fname_len) == 0) {
-                    fprintf(stderr, "Error: Duplicate filenames:\n%s\n%s\nThis will cause name collisions in C output.", f->file, f2->file);
-                    return 1;
-                }
+    /* sanity check that people don't use multiple files with the same filename */
+    for (int i = 0; i < num_files; ++i) {
+        char *fname;
+        int fname_len;
+        get_filename(files[i].file, &fname, &fname_len);
+        for (int j = 0; j < num_files; ++j) {
+            if (j == i) continue;
+            char *f2name;
+            int f2name_len;
+            get_filename(files[j].file, &f2name, &f2name_len);
+            if (fname_len == f2name_len && memcmp(fname, f2name, fname_len) == 0) {
+                fprintf(stderr, "Error: Duplicate filenames:\n%s\n%s\nThis will cause name collisions in output.", files[i].file, files[j].file);
+                return 1;
             }
         }
     }
 
     /* compile */
-    for (InputFile *f = files; f; f = f->next) {
-        if (!shad_compile(f->file, output_format, &f->result)) {
+    for (int i = 0; i < num_files; ++i)
+        if (!shad_compile(files[i].file, output_format, &files[i].result))
             return 1;
-        }
-    }
 
     /* open output file */
     FILE *out = stdout;
@@ -189,17 +157,22 @@ int main(int argc, const char **argv) {
 
     /* write out the result */
     int num_compiled = 0;
-    for (InputFile *f = files; f; f = f->next) {
+    for (int i = 0; i < num_files; ++i) {
         char *code;
-        size_t len;
-        if (output_type == OUTPUT_TYPE_C) {
-            const char *fname;
-            size_t fname_len;
-            get_filename(f->file, &fname, &fname_len);
-            shad_serialize_to_c(&f->result, fname, &code, &len);
+        int len;
+        switch (output_format) {
+            case SHAD_OUTPUT_FORMAT_SDL: {
+                char *fname;
+                int fname_len;
+                get_filename(files[i].file, &fname, &fname_len);
+                shad_sdl_serialize_to_c(&files[i].result, fname, &code, &len);
+                break;
+            }
+            default: {
+                fprintf(stderr, "Error: Unknown output format: %i\n", output_format);
+                return 1;
+            }
         }
-        else
-            shad_serialize(&f->result, &code, &len);
         fwrite(code, 1, len, out);
         ++num_compiled;
     }

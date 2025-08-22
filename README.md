@@ -40,7 +40,7 @@ You can either compile using the C interface, or using the CLI.
 ### Compilation using CLI
 
 ```bash
-shad_cli.exe triangle.shader --output triangle_shader.h --sdl --output_c
+shad sdl3 triangle.shader -o my_shaders.h
 ```
 
 You can find the CLI under [Releases](https://github.com/cribalik/cm_shader/releases)
@@ -48,53 +48,39 @@ You can find the CLI under [Releases](https://github.com/cribalik/cm_shader/rele
 ### Compilation using C library
 
 ```c++
-/* at build time */
 #define SHAD_COMPILER
 #include "shad.h"
+#include "shad.c"
+
 void compile() {
-    ShadResult sr;
-    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sr);
+    ShadCompilation sc;
+    shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
 
     char *code;
-    size_t code_len;
-    shad_serialize_to_c(&sr, "triangle", &code, &code_len);
-    write_to_file("triangle_shader.h", code, code_len);
+    int code_len;
+    shad_sdl_serialize_to_c(&sc, "triangle", &code, &code_len);
+    write_to_file("my_shaders.h", code, code_len);
+
+    shad_compilation_free(&sc);
 }
-#include "shad.c"
 ```
 
 ## Using the compilation result to create SDL Shaders & Pipelines
 
 ```c++
-#include <SDL3/SDL.h>
-#define SHAD_RUNTIME
-#include "shad.h"
-
-/* this contains all the shader info we compiled, accessible through shad_result_<name>() */
-#include "triangle_shader.h"
+#include "my_shaders.h"
 
 void func() {
-    ShadResult *sr = shad_result_triangle(); /* this exists in triangle_shader.h */
+    /* shader creation */
+    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &shad_sdl_vertex_shader_triangle);
+    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &shad_sdl_fragment_shader_triangle);
 
-    /* SDL shader creation */
-    SDL_GPUShaderCreateInfo vsinfo, fsinfo;
-    shad_sdl_prefill_vertex_shader(&vsinfo, &sr);
-    shad_sdl_prefill_fragment_shader(&fsinfo, &sr);
-    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &vsinfo);
-    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &fsinfo);
-
-    /* SDL pipeline creation */
-    SDL_GPUGraphicsPipelineCreateInfo pinfo;
-    shad_sdl_prefill_pipeline(&pinfo, &sr);
+    /* pipeline creation */
+    SDL_GPUGraphicsPipelineCreateInfo pinfo = shad_sdl_pipeline_triangle;
     pinfo.vertex_shader = vshader;
     pinfo.fragment_shader = fshader;
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
-
-    /* free compilation */
-    shad_result_free(&sr);
 }
-
-#include "shad.c"
 ```
 
 Find complete examples under `examples`.
@@ -113,47 +99,62 @@ TODO:
 
 # Build
 
-## Building the compiler
+Just include `shad.h` and `shad.c` into your source. 
+`shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C/C++ file without fear of name collisions.
 
-**NOTE**: If you will be compiling the shaders at build time, consider using the CLI instead.
-
-1. Link the Vulkan SDK. `cm_shader` uses the Vulkan SDK (specifically glslang) to compile GLSL to SPIRV.
-2. Include `shad.h` and `shad.c` into your project, and define `SHAD_COMPILER`
-
-`shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
-
-```c++
-#define SHAD_COMPILER
-#include "shad.h"
-/* your code */
-#include "shad.c"
-```
-
-## Building the runtime
-
-1. Include SDL3 headers
-2. Include `shad.h` and `shad.c`, and define `SHAD_RUNTIME`
-
-`shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C file without fear of name collisions.
-
-```c++
-#define SHAD_RUNTIME
-#include "shad.h"
-/* your code */
-#include "shad.c"
-```
+To use `shad_compile()`, you must define `SHAD_COMPILER` and link to the vulkan libraries (they are automatically linked using #pragma on windows)
+To use `shad_sdl_fill_*()` functions, you must include `SDL.h` before including `shad.h`. cm_shader doesn't call any SDL functions, it only needs the headers
 
 # Documentation
 
-## `SHAD_COMPILER` versus `SHAD_RUNTIME`
+## Compilation API (`shad_compile*()` functions)
 
-There are two aspects to the library - compiling the shaders to generate SPIRV and reflection data, and actually applying that information to the SDL creation structs.
-The former you probably want to do at build time, and the latter you want to do at runtime.
-The former also requires the Vulkan SDK, while the latter only requires SDL headers.
+Use this API to compile shaders and serialize/deserialize the result. Usually done as a build step or at runtime.
 
-To enable the compilation functions, you specify `SHAD_COMPILER` before including `shad.h`
+`shad_compile()`
+Compile a shader. free with shad_compilation_free()
+This requires linking with Vulkan (glslang specifically), so you have to enable it by defining SHAD_COMPILER
 
-To enable the runtime functions, you specify `SHAD_RUNTIME` before including `shad.h`
+`shad_compilation_serialize()`
+Serialize a compilation. data is freed when you call shad_compilation_free()
+
+`shad_compilation_deserialize()`
+Deserialize a compilation. free with shad_compilation_free()
+
+`shad_compilation_free()`
+Free a compilation
+
+## SDL3 API (`shad_sdl_*()` functions)
+
+This is the main API for using shad with SDL3.
+
+`shad_sdl_serialize_to_c()`
+Outputs C code with fully initialized SDL3 structs. The C code will be of the format:
+
+```cpp
+    static const SDL_GPUShaderCreateInfo shad_sdl_vertex_shader_<name> = {...};
+    static const SDL_GPUShaderCreateInfo shad_sdl_fragment_shader_<name> = {...};
+    static const SDL_GPUGraphicsPipelineCreateInfo shad_sdl_pipeline_<name> = {...};
+```
+
+`shad_sdl_fill_vertex_shader()`
+Fill SDL_GPUShaderCreateInfo with settings from the vertex shader compilation result
+Requires `SDL.h`
+
+`shad_sdl_fill_fragment_shader()`
+Fill SDL_GPUShaderCreateInfo with settings from the fragment shader compilation result
+Requires `SDL.h`
+
+`shad_sdl_fill_pipeline()`
+Fill SDL_GPUGraphicsPipelineCreateInfo with settings from the pipeline compilation result
+Requires `SDL.h`
+
+NOTE: Any arrays that have to be allocated to fill the info structs will be bound to ShadCompilation,
+    and will be destroyed when you call shad_compilation_free().
+    In short, only call shad_compilation_free() once you are done with the create info structs.
+
+NOTE: These functions will memzero the structs, so if you want to override some settings
+    you must do so _after_ the call.
 
 ## Shader annotations
 

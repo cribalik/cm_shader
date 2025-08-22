@@ -10,7 +10,7 @@
 
 int main(int argc, char const *argv[]) {
     /* compile shader */
-    ShadResult sc;
+    ShadCompilation sc;
     shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
 
     /* SDL initialization */
@@ -19,20 +19,20 @@ int main(int argc, char const *argv[]) {
 
     /* SDL shader creation */
     SDL_GPUShaderCreateInfo vsinfo, fsinfo;
-    shad_sdl_prefill_vertex_shader(&vsinfo, &sc);
-    shad_sdl_prefill_fragment_shader(&fsinfo, &sc);
+    shad_sdl_fill_vertex_shader(&vsinfo, &sc);
+    shad_sdl_fill_fragment_shader(&fsinfo, &sc);
     SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &vsinfo);
     SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &fsinfo);
 
     /* SDL pipeline creation */
     SDL_GPUGraphicsPipelineCreateInfo pinfo;
-    shad_sdl_prefill_pipeline(&pinfo, &sc);
+    shad_sdl_fill_pipeline(&pinfo, &sc);
     pinfo.vertex_shader = vshader;
     pinfo.fragment_shader = fshader;
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
 
     /* we're done with the shader compilation result, we can free it */
-    shad_result_free(&sc);
+    shad_compilation_free(&sc);
 
     /* SDL texture creation */
     SDL_GPUTextureCreateInfo tinfo = {0};

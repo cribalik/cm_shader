@@ -11,16 +11,56 @@ cm_shader - Super-powered GLSL with SDL3 integration
 You write your shaders in a GLSL-style language, it can transpile it to SPIRV, and can fill the SDL creation structs for you.
 It also supports annotations for settings like blending, culling, etc. which is also filled into the SDL creation structs.
 
-See README.md for documentation
+See README.md for full documentation, but here's a quick overview:
+
+#### Compilation API (shad_compile* functions)
+
+    Use this API to compile shaders and serialize/deserialize the result. Usually done as a build step or at runtime.
+
+    shad_compile()
+        Compile a shader. free with shad_compilation_free()
+        This requires linking with Vulkan (glslang specifically), so you have to enable it by defining SHAD_COMPILER
+
+    shad_compilation_serialize()
+        Serialize a compilation. data is freed when you call shad_compilation_free()
+
+    shad_compilation_deserialize()
+        Deserialize a compilation. free with shad_compilation_free()
+
+    shad_compilation_free()
+        Free a compilation
+
+#### SDL3 API (shad_sdl_* functions)
+
+    This is the main API for using shad with SDL3.
+
+    shad_sdl_serialize_to_c()
+        Outputs C code with fully initialized SDL3 structs. The C code will be of the format:
+            static const SDL_GPUShaderCreateInfo shad_sdl_vertex_shader_<name> = {...};
+            static const SDL_GPUShaderCreateInfo shad_sdl_fragment_shader_<name> = {...};
+            static const SDL_GPUGraphicsPipelineCreateInfo shad_sdl_pipeline_<name> = {...};
+
+    shad_sdl_fill_vertex_shader()
+        Fill SDL_GPUShaderCreateInfo with settings from the vertex shader compilation result
+
+    shad_sdl_fill_fragment_shader()
+        Fill SDL_GPUShaderCreateInfo with settings from the fragment shader compilation result
+
+    shad_sdl_fill_pipeline()
+        Fill SDL_GPUGraphicsPipelineCreateInfo with settings from the pipeline compilation result
+
+
+    NOTE: Any arrays that have to be allocated to fill the info structs will be bound to ShadCompilation,
+        and will be destroyed when you call shad_compilation_free().
+        In short, only call shad_compilation_free() once you are done with the create info structs.
+
+    NOTE: These functions will memzero the structs, so if you want to override some settings
+        you must do so _after_ the call.
 
 */
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-#if !defined(SHAD_RUNTIME) && !defined(SHAD_COMPILER)
-    #error "Either SHAD_RUNTIME or SHAD_COMPILER must be defined. Check the README.md for examples"
 #endif
 
 typedef enum ShadOutputFormat {
@@ -190,7 +230,7 @@ typedef struct ShadVertexInputBuffer {
     int stride;
 } ShadVertexInputBuffer;
 
-typedef struct ShadResult {
+typedef struct ShadCompilation {
     /* vertex shader info */
     char *vertex_code;
     int vertex_code_size;
@@ -238,82 +278,20 @@ typedef struct ShadResult {
 
     /* private stuff */
     void *arena;
-} ShadResult;
-
-/* Free a compilation result */
-void shad_result_free(ShadResult*);
-/*
-    Serialize a compilation into C code to include into your project.
-    The C code will be of the format:
-        static const ShadResult shad_result_<name_of_file_without_extension>;
-*/
-void shad_serialize_to_c(const ShadResult *result, const char *name, char **code_out, int *num_bytes_out);
-/*
-    Serialize a compilation into a binary format.
-    Deserialize with shad_deserialize()
-    Free the result with shad_free()
-*/
-void shad_serialize(const ShadResult *result, char **bytes_out, int *num_bytes_out);
-/*
-    Deserialize bytes that were serialized with shad_serialize()
-*/
-ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *result);
-void shad_free(void*);
-
-/*******
-
-    Compilation API
-
-    Use this API to compile shaders. Can be done as a build step or at runtime.
-    Requires linking with Vulkan (glslang specifically)
-
-*******/
+} ShadCompilation;
 
 #ifdef SHAD_COMPILER
-
-/* Returns 1 on success, 0 on failure. Call shad_result_free() to free result */
-ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResult *result);
-
+ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadCompilation *result);
 #endif /* SHAD_COMPILER */
-
-/*******
-
-    Runtime API
-
-    Use this API to create GPU Shaders and Pipelines at runtime.
-    Doesn't require linking to anything
-    You can either serialize to binary representation, or to C code for compiling into your project.
-
-*******/
-
-#ifdef SHAD_RUNTIME
-
-/*****
-  SDL implementation
- *****/
-
+void     shad_compilation_serialize(ShadCompilation *compilation, char **bytes_out, int *num_bytes_out);
+ShadBool shad_compilation_deserialize(char *bytes, int num_bytes, ShadCompilation *result);
+void     shad_compilation_free(ShadCompilation*);
+void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_out, int *code_len_out);
 #ifdef SDL_VERSION
-
-/*
-
-Fills SDL_GPU*CreateInfo structs with settings from the shader.
-
-NOTE: Any arrays that have to be allocated to fill the info structs will be bound to ShadResult,
-      and will be destroyed when you call shad_result_free().
-      In short, only call shad_result_free() once you are done with the create info structs.
-
-NOTE: These functions will memzero the structs, so if you want to override some settings
-      you must do so _after_ the call.
-
-*/
-
-void shad_sdl_prefill_vertex_shader(struct SDL_GPUShaderCreateInfo *info, ShadResult *sc);
-void shad_sdl_prefill_fragment_shader(struct SDL_GPUShaderCreateInfo *info, ShadResult *sc);
-void shad_sdl_prefill_pipeline(struct SDL_GPUGraphicsPipelineCreateInfo *info, ShadResult *sc);
-
+void shad_sdl_fill_vertex_shader(struct SDL_GPUShaderCreateInfo *info, ShadCompilation *sc);
+void shad_sdl_fill_fragment_shader(struct SDL_GPUShaderCreateInfo *info, ShadCompilation *sc);
+void shad_sdl_fill_pipeline(struct SDL_GPUGraphicsPipelineCreateInfo *info, ShadCompilation *sc);
 #endif /* SDL_VERSION */
-
-#endif /* SHAD_RUNTIME*/
 
 #ifdef __cplusplus
 }

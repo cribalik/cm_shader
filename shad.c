@@ -14,9 +14,13 @@
 
 #ifdef _WIN32
     #define SHAD_ALLOCA(type, count) ((type*)memset(_alloca(sizeof(type) * (count)), 0, sizeof(type) * (count)))
+    #define SHAD_ALIGNOF(type) __alignof(type)
 #else
     #define SHAD_ALLOCA(type, size) ((type*)memset(alloca(sizeof(type) * (count)), 0, sizeof(type) * (count)))
+    #define SHAD_ALIGNOF(type) __alignof__(type)
 #endif
+
+#define SHAD_STREQ(a,b) (!strcmp(a,b))
 
 #define SHAD_MAX(a,b) ((a) < (b) ? (b) : (a))
 
@@ -48,14 +52,6 @@ void* shad__alloc(ShadArena* arena, int size, int align) {
     return curr;
 }
 
-#ifdef _MSC_VER
-    #define SHAD_ALIGNOF(type) __alignof(type)
-#else
-    #define SHAD_ALIGNOF(type) __alignof__(type)
-#endif
-#define SHAD_ALLOC(type, a, n) (type*)memset(shad__alloc(a, sizeof(type)*(n), SHAD_ALIGNOF(type)), 0, sizeof(type)*(n))
-#define SHAD_STREQ(a,b) (!strcmp(a,b))
-
 void shad__arena_destroy(ShadArena *a) {
     ShadArenaBlock *b = a->blocks, *next = NULL;
     for (; b; b = next) {
@@ -63,6 +59,8 @@ void shad__arena_destroy(ShadArena *a) {
         free(b);
     }
 }
+
+#define SHAD_ALLOC(type, a, n) (type*)memset(shad__alloc(a, sizeof(type)*(n), SHAD_ALIGNOF(type)), 0, sizeof(type)*(n))
 
 typedef struct ShadWriter {
     ShadArena *arena;
@@ -169,9 +167,9 @@ void shad__writer_push(ShadWriter *w, char *data, int len) {
     w->buf[w->len] = 0;
 }
 
-void shad_result_free(ShadResult *r) {
+void shad_compilation_free(ShadCompilation *r) {
     if (r->arena)
-        shad__arena_destroy(r->arena);
+        shad__arena_destroy((ShadArena*)r->arena);
 }
 
 /******
@@ -219,12 +217,12 @@ ShadBool shad__isdigit(char c) {
     return c >= '0' && c <= '9';
 }
 
-ShadBool shad__match(ShadParser *p, char *token) {
+ShadBool shad__match(ShadParser *p, const char *token) {
     char *s;
     char *t;
 
     s = p->s;
-    t = token;
+    t = (char*)token;
     while (shad__isspace(*s)) if (*s++ == '\n') ++s;
     while (*s && *t && *s == *t) ++s, ++t;
     if (*t) return 0;
@@ -232,12 +230,12 @@ ShadBool shad__match(ShadParser *p, char *token) {
     return 1;
 }
 
-ShadBool shad__match_identifier(ShadParser *p, char *identifier) {
+ShadBool shad__match_identifier(ShadParser *p, const char *identifier) {
     char *s;
     char *t;
 
     s = p->s;
-    t = identifier;
+    t = (char*)identifier;
     while (shad__isspace(*s)) if (*s++ == '\n') ++s;
     while (*s && *t && *s == *t) ++s, ++t;
     if (*t) return 0;
@@ -251,7 +249,6 @@ char* shad__strcpy(ShadArena *arena, char *start, char *end) {
     char *result;
 
     len = end - start;
-    if (!len) return "";
     result = SHAD_ALLOC(char, arena, len+1);
     memcpy(result, start, len);
     result[len] = 0;
@@ -560,9 +557,9 @@ ShadBool shad__consume_blend(ShadParser *p, ShadCodeLocation *blend_code_locatio
         *blend_dst = SHAD_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         *blend_op = SHAD_BLEND_OP_ADD;
     } else if (shad__match_identifier(p, "off")) {
-        *blend_src = 0;
-        *blend_dst = 0;
-        *blend_op = 0;
+        *blend_src = SHAD_BLEND_FACTOR_INVALID;
+        *blend_dst = SHAD_BLEND_FACTOR_INVALID;
+        *blend_op = SHAD_BLEND_OP_INVALID;
     } else {
         *blend_src = shad__consume_blend_factor(p);
         *blend_dst = shad__consume_blend_factor(p);
@@ -578,13 +575,14 @@ ShadBool shad__consume_blend(ShadParser *p, ShadCodeLocation *blend_code_locatio
 }
 
 ShadBool shad__glslang(glslang_stage_t stage, ShadArena *arena, char *code, char **code_out, int *code_size_out) {
-    glslang_input_t input = {0};
+    glslang_input_t input;
     glslang_shader_t* shader = NULL;
     glslang_program_t* program = NULL;
     const char *spirv_messages = NULL;
     int result_code_size = 0;
     char *result_code = NULL;
 
+    memset(&input, 0, sizeof(input));
     input.language = GLSLANG_SOURCE_GLSL;
     input.stage = stage;
     input.client = GLSLANG_CLIENT_VULKAN;
@@ -650,7 +648,7 @@ ShadBool shad__glslang(glslang_stage_t stage, ShadArena *arena, char *code, char
     return 0;
 }
 
-ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResult *result) {
+ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadCompilation *result) {
     /* AST definitions */
     enum {
         ShadAstTextType,
@@ -707,9 +705,9 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
     memset(&arena, 0, sizeof(arena));
     memset(&p, 0, sizeof(p));
     memset(&curr_blend_code_location, 0, sizeof(curr_blend_code_location));
-    curr_blend_src = 0;
-    curr_blend_dst = 0;
-    curr_blend_op = 0;
+    curr_blend_src = SHAD_BLEND_FACTOR_INVALID;
+    curr_blend_dst = SHAD_BLEND_FACTOR_INVALID;
+    curr_blend_op = SHAD_BLEND_OP_INVALID;
     ast_root = NULL;
     ast_ptr = &ast_root;
 
@@ -1195,9 +1193,8 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
     }
 
     /* move the arena into the result */
-    ShadArena *arena_cpy = SHAD_ALLOC(ShadArena, &arena, 1);
-    *arena_cpy = arena;
-    result->arena = arena_cpy;
+    result->arena = SHAD_ALLOC(ShadArena, &arena, 1);
+    memcpy(result->arena, &arena, sizeof(arena));
 
     /* destroy temp arena */
     shad__arena_destroy(&tmp);
@@ -1216,190 +1213,33 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadResu
 
 #endif /* SHAD_COMPILER */
 
+ShadArena* shad__compilation_arena_get(ShadCompilation *compiled) {
+    if (!compiled->arena) {
+        ShadArena arena = {0};
+        compiled->arena = SHAD_ALLOC(ShadArena, &arena, 1);
+        memcpy(compiled->arena, &arena, sizeof(arena));
+    }
+    return (ShadArena*)compiled->arena;
+}
+
 void shad__serialize_spirv_to_code(ShadWriter *w, char *spirv, int spirv_size) {
     while (spirv_size) shad__writer_print(w, "%x,", *(unsigned*)spirv), spirv += 4, spirv_size -= 4;
 }
 
-void shad_serialize_to_c(const ShadResult *shad_result, const char *name, char **code_out, int *num_bytes_out) {
-    ShadResult *result = (ShadResult*)shad_result;
-    ShadArena tmp = {0};
-    ShadWriter writer = {&tmp, NULL, 0, 0};
-    int i;
-
-    /* vertex spirv */
-    shad__writer_print(&writer, "unsigned shad__spirv_vertex_code_%s[%i] = {", name, (int)result->spirv_vertex_code_size/4);
-    shad__serialize_spirv_to_code(&writer, result->spirv_vertex_code, result->spirv_vertex_code_size);
-    shad__writer_print(&writer, "};\n");
-
-    /* fragment spirv */
-    if (result->has_fragment_shader) {
-        shad__writer_print(&writer, "unsigned shad__spirv_fragment_code_%s[%i] = {", name, (int)result->spirv_fragment_code_size/4);
-        shad__serialize_spirv_to_code(&writer, result->spirv_fragment_code, result->spirv_fragment_code_size);
-        shad__writer_print(&writer, "};\n");
-    } else {
-        shad__writer_print(&writer, "unsigned shad__spirv_fragment_code_%s[1] = {0}", name);
-    }
-
-    /* vertex inputs */
-    if (result->num_vertex_inputs) {
-        shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[%i] = {\n", name, (int)result->num_vertex_inputs);
-        for (i = 0; i < result->num_vertex_inputs; ++i) {
-            ShadVertexInput *in = result->vertex_inputs + i;
-            shad__writer_print(&writer,
-            "    {\n"
-            "        {0},                         /* code_location */\n"
-            "        NULL,                        /* component_type */\n"
-            "        NULL,                        /* data_type */\n"
-            "        NULL,                        /* name */\n"
-            "        (ShadVertexElementFormat)%i, /* format */\n"
-            "        %i,                          /* buffer_slot */\n"
-            "        0,                           /* size */\n"
-            "        0,                           /* align */\n"
-            "        %i                           /* offset */\n"
-            "        0,                           /* is_flat */\n"
-            "        %i,                          /* instanced */\n"
-            "    },\n",
-            (int)in->format,
-            (int)in->buffer_slot,
-            (int)in->offset,
-            (int)in->instanced);
-        }
-        shad__writer_print(&writer, "};\n");
-    } else {
-        shad__writer_print(&writer, "ShadVertexInput shad__vertex_inputs_%s[1] = {0};\n", name);
-    }
-
-    /* vertex input buffers */
-    if (result->num_vertex_input_buffers) {
-        shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[%i] = {\n", name, (int)result->num_vertex_input_buffers);
-        for (i = 0; i < result->num_vertex_input_buffers; ++i) {
-            ShadVertexInputBuffer *in = result->vertex_input_buffers + i;
-            shad__writer_print(&writer,
-            "    {\n"
-            "        %i, /* slot */\n"
-            "        %i, /* instanced */\n"
-            "        %i, /* stride */\n"
-            "    },\n",
-            (int)in->slot,
-            (int)in->instanced,
-            (int)in->stride);
-        }
-        shad__writer_print(&writer, "};\n");
-    } else {
-        shad__writer_print(&writer, "ShadVertexInputBuffer shad__vertex_input_buffers_%s[1] = {0};\n", name);
-    }
-
-    /* fragment outputs */
-    if (result->num_fragment_outputs) {
-        shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[%i] = {\n", name, (int)result->num_fragment_outputs);
-        for (i = 0; i < result->num_fragment_outputs; ++i) {
-            ShadFragmentOutput *fout = result->fragment_outputs + i;
-            shad__writer_print(&writer,
-            "    {\n"
-            "         {0},                   /* code_location */\n"
-            "         (ShadTextureFormat)%i, /* format */\n"
-            "         {0},                   /* blend_code_location */\n"
-            "         (ShadBlendFactor)%i,   /* blend_src */\n"
-            "         (ShadBlendFactor)%i,   /* blend_dst */\n"
-            "         (ShadBlendOp)%i,       /* blend_op */\n"
-            "    },\n",
-            (int)fout->format,
-            (int)fout->blend_src,
-            (int)fout->blend_dst,
-            (int)fout->blend_op);
-        }
-        shad__writer_print(&writer, "};\n");
-    } else {
-        shad__writer_print(&writer, "ShadFragmentOutput shad__fragment_outputs_%s[1] = {0};\n", name);
-    }
-
-    /* ShadResult */
-    shad__writer_print(&writer,
-        "ShadResult shad__result_%s = {\n"
-        "    NULL, /* vertex_code */\n"
-        "    0, /* vertex_code_size */\n"
-        "    (char*)shad__spirv_vertex_code_%s, /* spirv_vertex_code */\n"
-        "    %i, /* spirv_vertex_code_size */\n"
-        "    shad__vertex_inputs_%s, /* vertex_inputs */\n"
-        "    %i, /* num_vertex_inputs */\n"
-        "    shad__vertex_input_buffers_%s, /* vertex_input_buffers */\n"
-        "    %i, /* num_vertex_input_buffers */\n"
-        "    %i, /* num_vertex_outputs */\n"
-        "    %i, /* num_vertex_samplers */\n"
-        "    %i, /* num_vertex_images */\n"
-        "    %i, /* num_vertex_buffers */\n"
-        "    %i, /* num_vertex_uniforms */\n"
-        "    %i, /* has_fragment_shader */\n"
-        "    NULL, /* fragment_code */\n"
-        "    0, /* fragment_code_size */\n"
-        "    (char*)shad__spirv_fragment_code_%s, /* spirv_fragment_code */\n"
-        "    %i, /* spirv_fragment_code_size */\n"
-        "    shad__fragment_outputs_%s, /* fragment_outputs */\n"
-        "    %i, /* num_fragment_outputs */\n"
-        "    %i, /* num_fragment_samplers */\n"
-        "    %i, /* num_fragment_images */\n"
-        "    %i, /* num_fragment_buffers */\n"
-        "    %i, /* num_fragment_uniforms */\n"
-        "    {0}, /* depth_code_location */\n"
-        "    %i, /* depth_write */\n"
-        "    (ShadCompareOp)%i, /* depth_cmp */\n"
-        "    (ShadTextureFormat)%i, /* depth_format */\n"
-        "    %i, /* depth_clip */\n"
-        "    {0}, /* cull_code_location */\n"
-        "    (ShadCullMode)%i, /* cull_mode */\n"
-        "    (ShadPrimitive)%i, /* primitive */\n"
-        "    %i, /* multisample_count */\n"
-        "    NULL, /* arena */\n"
-        "};\n",
-        name,
-        name,
-        result->spirv_vertex_code_size,
-        name,
-        result->num_vertex_inputs,
-        name,
-        (int)result->num_vertex_input_buffers,
-        (int)result->num_vertex_outputs,
-        (int)result->num_vertex_samplers,
-        (int)result->num_vertex_images,
-        (int)result->num_vertex_buffers,
-        (int)result->num_vertex_uniforms,
-        (int)result->has_fragment_shader,
-        name,
-        result->spirv_fragment_code_size,
-        name,
-        (int)result->num_fragment_outputs,
-        (int)result->num_fragment_samplers,
-        (int)result->num_fragment_images,
-        (int)result->num_fragment_buffers,
-        (int)result->num_fragment_uniforms,
-        (int)result->depth_write,
-        (int)result->depth_cmp,
-        (int)result->depth_format,
-        (int)result->depth_clip,
-        (int)result->cull_mode,
-        (int)result->primitive,
-        (int)result->multisample_count
-    );
-
-    shad__writer_print(&writer, "ShadResult* shad_result_%s(void) {return &shad__result_%s;}\n", name, name);
-
-    int len = writer.len;
-    char *output = (char*)malloc(len+1);
-    memcpy(output, writer.buf, len);
-    output[len] = 0;
-    *code_out = output;
-    *num_bytes_out = len;
-
-    shad__arena_destroy(&tmp);
-}
-
-void shad_serialize(const ShadResult *compiled, char **bytes_out, int *num_bytes_out) {
-    ShadArena tmp = {0};
-    ShadWriter writer = {&tmp, NULL, 0, 0};
+void shad_compilation_serialize(ShadCompilation *compiled, char **bytes_out, int *num_bytes_out) {
+    ShadArena *arena = shad__compilation_arena_get(compiled);
+    ShadWriter writer = {arena, NULL, 0, 0};
+    int version = 1;
     int i;
 
     #define SHAD_WRITE_N(ptr, size) shad__writer_push(&writer, (char*)(ptr), size);
     #define SHAD_WRITE(ptr) SHAD_WRITE_N(ptr, sizeof(*(ptr)))
+
+    /* magic number */
+    SHAD_WRITE_N("SHAD", 4);
+
+    /* version */
+    SHAD_WRITE(&version);
 
     /* vertex shader info */
     SHAD_WRITE(&compiled->spirv_vertex_code_size);
@@ -1456,26 +1296,16 @@ void shad_serialize(const ShadResult *compiled, char **bytes_out, int *num_bytes
     SHAD_WRITE(&compiled->multisample_count);
 
     /* copy out result */
-    char *result = (char*)malloc(writer.len+1);
-    memcpy(result, writer.buf, writer.len+1);
-    *bytes_out = result;
+    *bytes_out = writer.buf;
     *num_bytes_out = writer.len;
-
-    /* destroy arena */
-    shad__arena_destroy(&tmp);
     return;
-
-    #undef SHAD_WRITE_N
-    #undef SHAD_WRITE
 }
 
-ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *compiled) {
-    ShadArena arena;
-    int num_bytes_remaining;
+ShadBool shad_compilation_deserialize(char *bytes, int num_bytes, ShadCompilation *compiled) {
+    ShadArena arena = {0};
+    int num_bytes_remaining = num_bytes;
     int i;
 
-    memset(&arena, 0, sizeof(arena));
-    num_bytes_remaining = (int)num_bytes;
     memset(compiled, 0, sizeof(*compiled));
 
     #define SHAD_READ_N(ptr, size) do { \
@@ -1486,6 +1316,16 @@ ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *compiled) {
         num_bytes_remaining -= s; \
     } while (0)
     #define SHAD_READ(ptr) SHAD_READ_N(ptr, sizeof(*(ptr)))
+
+    /* magic number */
+    char magic[4];
+    SHAD_READ_N(magic, 4);
+    if (memcmp(magic, "SHAD", 4) != 0) goto err;
+
+    /* version */
+    int version;
+    SHAD_READ(&version);
+    if (version != 1) goto err;
 
     /* vertex shader info */
     SHAD_READ(&compiled->spirv_vertex_code_size);
@@ -1548,12 +1388,8 @@ ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *compiled) {
 
     if (num_bytes_remaining) goto err;
 
-    {
-        ShadArena *arena_on_heap = SHAD_ALLOC(ShadArena, &arena, 1);
-        *arena_on_heap = arena;
-        compiled->arena = arena_on_heap;
-    }
-
+    compiled->arena = SHAD_ALLOC(ShadArena, &arena, 1);
+    memcpy(compiled->arena, &arena, sizeof(arena));
     return 1;
 
     err:
@@ -1564,15 +1400,7 @@ ShadBool shad_deserialize(char *bytes, int num_bytes, ShadResult *compiled) {
     #undef SHAD_READ_N
 }
 
-void shad_free(void *ptr) {
-    free(ptr);
-}
-
-/* Runtime implementation */
-
-#ifdef SHAD_RUNTIME
-
-/* SDL Implementation */
+/* SDL API */
 
 #ifdef SDL_VERSION
 
@@ -1696,7 +1524,7 @@ static const SDL_GPUPrimitiveType shad_to_sdl_primitive[] = {
     SDL_GPU_PRIMITIVETYPE_POINTLIST,      /* SHAD_PRIMITIVE_POINT_LIST */
 };
 
-void shad_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, ShadResult *compiled) {
+void shad_sdl_fill_vertex_shader(SDL_GPUShaderCreateInfo *info, ShadCompilation *compiled) {
     memset(info, 0, sizeof(*info));
     info->code = (Uint8*)compiled->spirv_vertex_code;
     info->code_size = compiled->spirv_vertex_code_size;
@@ -1710,7 +1538,7 @@ void shad_sdl_prefill_vertex_shader(SDL_GPUShaderCreateInfo *info, ShadResult *c
     /* TODO: set name property */
 }
 
-void shad_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, ShadResult *compiled) {
+void shad_sdl_fill_fragment_shader(SDL_GPUShaderCreateInfo *info, ShadCompilation *compiled) {
     memset(info, 0, sizeof(*info));
     if (!compiled->has_fragment_shader) return;
     info->code = (Uint8*)compiled->spirv_fragment_code;
@@ -1725,19 +1553,11 @@ void shad_sdl_prefill_fragment_shader(SDL_GPUShaderCreateInfo *info, ShadResult 
     /* TODO: set name property */
 }
 
-void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResult *compiled) {
+void shad_sdl_fill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadCompilation *compiled) {
+    ShadArena *arena = shad__compilation_arena_get(compiled);
     int i;
 
     memset(info, 0, sizeof(*info));
-
-    if (!compiled->arena) {
-        ShadArena arena = {0};
-        ShadArena *arena_on_heap = SHAD_ALLOC(ShadArena, &arena, 1);
-        *arena_on_heap = arena;
-        compiled->arena = arena_on_heap;
-    }
-
-    ShadArena *arena = compiled->arena;
 
     /* set vertex_input_state */
     /* buffer descriptions */
@@ -1806,4 +1626,312 @@ void shad_sdl_prefill_pipeline(SDL_GPUGraphicsPipelineCreateInfo *info, ShadResu
 
 #endif /* SDL_VERSION */
 
-#endif /* SHAD_RUNTIME */
+
+static const char *shad_to_sdl_cull_mode_string[] = {
+    "SDL_GPU_CULLMODE_NONE", /* SDL_GPU_CULLMODE_INVALID */
+    "SDL_GPU_CULLMODE_NONE", /* SDL_GPU_CULLMODE_NONE */
+    "SDL_GPU_CULLMODE_FRONT", /* SDL_GPU_CULLMODE_FRONT */
+    "SDL_GPU_CULLMODE_BACK", /* SDL_GPU_CULLMODE_BACK */
+};
+
+static const char *shad_to_sdl_vertex_element_format_string[] = {
+    "SDL_GPU_VERTEXELEMENTFORMAT_INVALID", /* SHAD_VERTEXELEMENTFORMAT_INVALID */
+    "SDL_GPU_VERTEXELEMENTFORMAT_INT", /* SHAD_VERTEXELEMENTFORMAT_INT */
+    "SDL_GPU_VERTEXELEMENTFORMAT_INT2", /* SHAD_VERTEXELEMENTFORMAT_INT2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_INT3", /* SHAD_VERTEXELEMENTFORMAT_INT3 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_INT4", /* SHAD_VERTEXELEMENTFORMAT_INT4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UINT", /* SHAD_VERTEXELEMENTFORMAT_UINT */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UINT2", /* SHAD_VERTEXELEMENTFORMAT_UINT2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UINT3", /* SHAD_VERTEXELEMENTFORMAT_UINT3 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UINT4", /* SHAD_VERTEXELEMENTFORMAT_UINT4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_FLOAT", /* SHAD_VERTEXELEMENTFORMAT_FLOAT */
+    "SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2", /* SHAD_VERTEXELEMENTFORMAT_FLOAT2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3", /* SHAD_VERTEXELEMENTFORMAT_FLOAT3 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4", /* SHAD_VERTEXELEMENTFORMAT_FLOAT4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_BYTE2", /* SHAD_VERTEXELEMENTFORMAT_BYTE2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_BYTE4", /* SHAD_VERTEXELEMENTFORMAT_BYTE4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UBYTE2", /* SHAD_VERTEXELEMENTFORMAT_UBYTE2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4", /* SHAD_VERTEXELEMENTFORMAT_UBYTE4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_BYTE2_NORM", /* SHAD_VERTEXELEMENTFORMAT_BYTE2_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_BYTE4_NORM", /* SHAD_VERTEXELEMENTFORMAT_BYTE4_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UBYTE2_NORM", /* SHAD_VERTEXELEMENTFORMAT_UBYTE2_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM", /* SHAD_VERTEXELEMENTFORMAT_UBYTE4_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_SHORT2", /* SHAD_VERTEXELEMENTFORMAT_SHORT2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_SHORT4", /* SHAD_VERTEXELEMENTFORMAT_SHORT4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_USHORT2", /* SHAD_VERTEXELEMENTFORMAT_USHORT2 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_USHORT4", /* SHAD_VERTEXELEMENTFORMAT_USHORT4 */
+    "SDL_GPU_VERTEXELEMENTFORMAT_SHORT2_NORM", /* SHAD_VERTEXELEMENTFORMAT_SHORT2_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_SHORT4_NORM", /* SHAD_VERTEXELEMENTFORMAT_SHORT4_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_USHORT2_NORM", /* SHAD_VERTEXELEMENTFORMAT_USHORT2_NORM */
+    "SDL_GPU_VERTEXELEMENTFORMAT_USHORT4_NORM", /* SHAD_VERTEXELEMENTFORMAT_USHORT4_NORM */
+};
+
+static const char *shad_to_sdl_compare_op_string[] = {
+    "SDL_GPU_COMPAREOP_INVALID", /* SHAD_COMPARE_OP_INVALID */
+    "SDL_GPU_COMPAREOP_NEVER", /* SHAD_COMPARE_OP_NEVER */
+    "SDL_GPU_COMPAREOP_LESS", /* SHAD_COMPARE_OP_LESS */
+    "SDL_GPU_COMPAREOP_EQUAL", /* SHAD_COMPARE_OP_EQUAL */
+    "SDL_GPU_COMPAREOP_LESS_OR_EQUAL", /* SHAD_COMPARE_OP_LESS_OR_EQUAL */
+    "SDL_GPU_COMPAREOP_GREATER", /* SHAD_COMPARE_OP_GREATER */
+    "SDL_GPU_COMPAREOP_NOT_EQUAL", /* SHAD_COMPARE_OP_NOT_EQUAL */
+    "SDL_GPU_COMPAREOP_GREATER_OR_EQUAL", /* SHAD_COMPARE_OP_GREATER_OR_EQUAL */
+    "SDL_GPU_COMPAREOP_ALWAYS", /* SHAD_COMPARE_OP_ALWAYS */
+};
+
+static const char *shad_to_sdl_texture_format_string[] = {
+    "SDL_GPU_TEXTUREFORMAT_INVALID", /* SHAD_TEXTURE_FORMAT_INVALID */
+    "SDL_GPU_TEXTUREFORMAT_R8_UNORM", /* SHAD_TEXTURE_FORMAT_R8 */
+    "SDL_GPU_TEXTUREFORMAT_R8G8_UNORM", /* SHAD_TEXTURE_FORMAT_RG8 */
+    "SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM", /* SHAD_TEXTURE_FORMAT_RGBA8 */
+    "SDL_GPU_TEXTUREFORMAT_R16_UNORM", /* SHAD_TEXTURE_FORMAT_R16 */
+    "SDL_GPU_TEXTUREFORMAT_R16G16_UNORM", /* SHAD_TEXTURE_FORMAT_RG16 */
+    "SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM", /* SHAD_TEXTURE_FORMAT_RGBA16 */
+    "SDL_GPU_TEXTUREFORMAT_R16_FLOAT", /* SHAD_TEXTURE_FORMAT_R16F */
+    "SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT", /* SHAD_TEXTURE_FORMAT_RG16F */
+    "SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT", /* SHAD_TEXTURE_FORMAT_RGBA16F */
+    "SDL_GPU_TEXTUREFORMAT_R32_FLOAT", /* SHAD_TEXTURE_FORMAT_R32F */
+    "SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT", /* SHAD_TEXTURE_FORMAT_RG32F */
+    "SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT", /* SHAD_TEXTURE_FORMAT_RGBA32F */
+    "SDL_GPU_TEXTUREFORMAT_R11G11B10_UFLOAT", /* SHAD_TEXTURE_FORMAT_R11G11B10F */
+    "SDL_GPU_TEXTUREFORMAT_D16_UNORM", /* SHAD_TEXTURE_FORMAT_D16 */
+    "SDL_GPU_TEXTUREFORMAT_D24_UNORM", /* SHAD_TEXTURE_FORMAT_D24 */
+    "SDL_GPU_TEXTUREFORMAT_D32_FLOAT", /* SHAD_TEXTURE_FORMAT_D32F */
+    "SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT", /* SHAD_TEXTURE_FORMAT_D24_S8 */
+    "SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT", /* SHAD_TEXTURE_FORMAT_D32F_S8 */
+};
+
+static const char *shad_to_sdl_blend_factor_string[] = {
+    "SDL_GPU_BLENDFACTOR_INVALID", /* SHAD_BLEND_FACTOR_INVALID */
+    "SDL_GPU_BLENDFACTOR_ZERO", /* SHAD_BLEND_FACTOR_ZERO */
+    "SDL_GPU_BLENDFACTOR_ONE", /* SHAD_BLEND_FACTOR_ONE */
+    "SDL_GPU_BLENDFACTOR_SRC_COLOR", /* SHAD_BLEND_FACTOR_SRC_COLOR */
+    "SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_COLOR", /* SHAD_BLEND_FACTOR_ONE_MINUS_SRC_COLOR */
+    "SDL_GPU_BLENDFACTOR_DST_COLOR", /* SHAD_BLEND_FACTOR_DST_COLOR */
+    "SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_COLOR", /* SHAD_BLEND_FACTOR_ONE_MINUS_DST_COLOR */
+    "SDL_GPU_BLENDFACTOR_SRC_ALPHA", /* SHAD_BLEND_FACTOR_SRC_ALPHA */
+    "SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA", /* SHAD_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA */
+    "SDL_GPU_BLENDFACTOR_DST_ALPHA", /* SHAD_BLEND_FACTOR_DST_ALPHA */
+    "SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_ALPHA", /* SHAD_BLEND_FACTOR_ONE_MINUS_DST_ALPHA */
+    "SDL_GPU_BLENDFACTOR_CONSTANT_COLOR", /* SHAD_BLEND_FACTOR_CONSTANT_COLOR */
+    "SDL_GPU_BLENDFACTOR_ONE_MINUS_CONSTANT_COLOR", /* SHAD_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR */
+    "SDL_GPU_BLENDFACTOR_SRC_ALPHA_SATURATE", /* SHAD_BLEND_FACTOR_SRC_ALPHA_SATURATE */
+};
+
+static const char *shad_to_sdl_blend_op_string[] = {
+    "SDL_GPU_BLENDOP_INVALID", /* SHAD_BLEND_OP_INVALID */
+    "SDL_GPU_BLENDOP_ADD", /* SHAD_BLEND_OP_ADD */
+    "SDL_GPU_BLENDOP_SUBTRACT", /* SHAD_BLEND_OP_SUBTRACT */
+    "SDL_GPU_BLENDOP_REVERSE_SUBTRACT", /* SHAD_BLEND_OP_REV_SUBTRACT */
+    "SDL_GPU_BLENDOP_MIN", /* SHAD_BLEND_OP_MIN */
+    "SDL_GPU_BLENDOP_MAX", /* SHAD_BLEND_OP_MAX */
+};
+
+static const char *shad_to_sdl_sample_count_string[] = {
+    "SDL_GPU_SAMPLECOUNT_1", /* 0 */
+    "SDL_GPU_SAMPLECOUNT_1", /* 1 */
+    "SDL_GPU_SAMPLECOUNT_2", /* 2 */
+    "SDL_GPU_SAMPLECOUNT_1", /* 3 */
+    "SDL_GPU_SAMPLECOUNT_4", /* 4 */
+    "SDL_GPU_SAMPLECOUNT_1", /* 5 */
+    "SDL_GPU_SAMPLECOUNT_1", /* 6 */
+    "SDL_GPU_SAMPLECOUNT_1", /* 7 */
+    "SDL_GPU_SAMPLECOUNT_8", /* 8 */
+};
+
+static const char *shad_to_sdl_primitive_string[] = {
+    "SDL_GPU_PRIMITIVETYPE_TRIANGLELIST",  /* SHAD_PRIMITIVE_INVALID */
+    "SDL_GPU_PRIMITIVETYPE_TRIANGLELIST",  /* SHAD_PRIMITIVE_TRIANGLE_LIST */
+    "SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP", /* SHAD_PRIMITIVE_TRIANGLE_STRIP */
+    "SDL_GPU_PRIMITIVETYPE_LINELIST",      /* SHAD_PRIMITIVE_LINE_LIST */
+    "SDL_GPU_PRIMITIVETYPE_LINESTRIP",     /* SHAD_PRIMITIVE_LINE_STRIP */
+    "SDL_GPU_PRIMITIVETYPE_POINTLIST",      /* SHAD_PRIMITIVE_POINT_LIST */
+};
+
+void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_out, int *code_len_out) {
+    ShadArena *arena = shad__compilation_arena_get(sc);
+    ShadWriter writer = {arena, NULL, 0, 0};
+    int i;
+
+    /* vertex spirv */
+    shad__writer_print(&writer, "static const unsigned shad__spirv_vertex_code_%s[%i] = {", name, (int)sc->spirv_vertex_code_size/4);
+    shad__serialize_spirv_to_code(&writer, (char*)sc->spirv_vertex_code, (int)sc->spirv_vertex_code_size);
+    shad__writer_print(&writer, "};\n");
+
+    /* fragment spirv */
+    if (sc->has_fragment_shader) {
+        shad__writer_print(&writer, "static const unsigned shad__spirv_fragment_code_%s[%i] = {", name, (int)sc->spirv_fragment_code_size/4);
+        shad__serialize_spirv_to_code(&writer, (char*)sc->spirv_fragment_code, (int)sc->spirv_fragment_code_size);
+        shad__writer_print(&writer, "};\n");
+    } else {
+        shad__writer_print(&writer, "static const unsigned shad__spirv_fragment_code_%s[1] = {0}", name);
+    }
+
+    /* vertex shader */
+    shad__writer_print(&writer, "static const SDL_GPUShaderCreateInfo shad_sdl_vertex_shader_%s = {\n", name);
+    shad__writer_print(&writer, "    (size_t)%i, /* code_size */\n", (int)sc->spirv_vertex_code_size);
+    shad__writer_print(&writer, "    (const Uint8*)shad__spirv_vertex_code_%s,   /* code */\n", name);
+    shad__writer_print(&writer, "    \"main\",                    /* entrypoint */\n");
+    shad__writer_print(&writer, "    SDL_GPU_SHADERFORMAT_SPIRV,  /* format */\n");
+    shad__writer_print(&writer, "    SDL_GPU_SHADERSTAGE_VERTEX,  /* stage */\n");
+    shad__writer_print(&writer, "    (Uint32)%i,                  /* num_samplers */\n", (int)sc->num_vertex_samplers);
+    shad__writer_print(&writer, "    (Uint32)%i,                  /* num_storage_textures */\n", (int)sc->num_vertex_images);
+    shad__writer_print(&writer, "    (Uint32)%i,                  /* num_storage_buffers */\n", (int)sc->num_vertex_buffers);
+    shad__writer_print(&writer, "    (Uint32)%i,                  /* num_uniform_buffers */\n", (int)sc->num_vertex_uniforms);
+    shad__writer_print(&writer, "    0,                  /* props */\n");
+    shad__writer_print(&writer, "};\n");
+
+    /* fragment shader */
+    if (sc->has_fragment_shader) {
+        shad__writer_print(&writer, "static const SDL_GPUShaderCreateInfo shad_sdl_fragment_shader_%s = {\n", name);
+        shad__writer_print(&writer, "    (size_t)%i,   /* code_size */\n", (int)sc->spirv_fragment_code_size);
+        shad__writer_print(&writer, "    (const Uint8*)shad__spirv_fragment_code_%s,  /* code */\n", name);
+        shad__writer_print(&writer, "    \"main\",                      /* entrypoint */\n");
+        shad__writer_print(&writer, "    SDL_GPU_SHADERFORMAT_SPIRV,    /* format */\n");
+        shad__writer_print(&writer, "    SDL_GPU_SHADERSTAGE_FRAGMENT,  /* stage */\n");
+        shad__writer_print(&writer, "    (Uint32)%i,         /* num_samplers */\n", (int)sc->num_fragment_samplers);
+        shad__writer_print(&writer, "    (Uint32)%i,         /* num_storage_textures */\n", (int)sc->num_fragment_images);
+        shad__writer_print(&writer, "    (Uint32)%i,         /* num_storage_buffers */\n", (int)sc->num_fragment_buffers);
+        shad__writer_print(&writer, "    (Uint32)%i,         /* num_uniform_buffers */\n", (int)sc->num_fragment_uniforms);
+        shad__writer_print(&writer, "    0,                  /* props */\n");
+        shad__writer_print(&writer, "};\n");
+    } else {
+        shad__writer_print(&writer, "static const SDL_GPUShaderCreateInfo shad_sdl_fragment_shader_%s = {0};\n", name);
+    }
+
+    /* vertex inputs */
+    if (sc->num_vertex_inputs) {
+        shad__writer_print(&writer, "static const SDL_GPUVertexAttribute shad__vertex_attributes_info_%s[%i] = {\n", name, (int)sc->num_vertex_inputs);
+        for (i = 0; i < sc->num_vertex_inputs; ++i) {
+            ShadVertexInput *in = sc->vertex_inputs + i;
+            shad__writer_print(&writer,
+            "    {\n"
+            "        (Uint32)%i,                          /* location */\n"
+            "        (Uint32)%i,                          /* buffer_slot */\n"
+            "        %s,      /* format */\n"
+            "        (Uint32)%i,                          /* offset */\n"
+            "    },\n",
+            (int)i,
+            (int)in->buffer_slot,
+            shad_to_sdl_vertex_element_format_string[in->format],
+            (int)in->offset);
+        }
+        shad__writer_print(&writer, "};\n");
+    } else {
+        shad__writer_print(&writer, "static const SDL_GPUVertexAttribute shad__vertex_attributes_info_%s[1] = {0};\n", name);
+    }
+
+    /* vertex input buffers */
+    if (sc->num_vertex_input_buffers) {
+        shad__writer_print(&writer, "static const SDL_GPUVertexBufferDescription shad__vertex_buffer_descriptions_info_%s[%i] = {\n", name, (int)sc->num_vertex_input_buffers);
+        for (i = 0; i < sc->num_vertex_input_buffers; ++i) {
+            ShadVertexInputBuffer *buffer = sc->vertex_input_buffers + i;
+            shad__writer_print(&writer,
+            "    {\n"
+            "        (Uint32)%i,                          /* slot */\n"
+            "        (Uint32)%i,                          /* pitch */\n"
+            "        %s,          /* input_rate */\n"
+            "        (Uint32)0,                           /* instance_step_rate */\n"
+            "    },\n",
+            (int)buffer->slot,
+            (int)buffer->stride,
+            buffer->instanced ? "SDL_GPU_VERTEXINPUTRATE_INSTANCE" : "SDL_GPU_VERTEXINPUTRATE_VERTEX");
+        }
+        shad__writer_print(&writer, "};\n");
+    } else {
+        shad__writer_print(&writer, "static const SDL_GPUVertexBufferDescription shad__vertex_buffer_descriptions_info_%s[1] = {0};\n", name);
+    }
+
+    /* color target descriptions */
+    if (sc->num_fragment_outputs) {
+        shad__writer_print(&writer, "static const SDL_GPUColorTargetDescription shad__color_target_descriptions_info_%s[%i] = {\n", name, (int)sc->num_fragment_outputs);
+        for (i = 0; i < sc->num_fragment_outputs; ++i) {
+            ShadFragmentOutput *out = sc->fragment_outputs + i;
+            shad__writer_print(&writer, "    {\n");
+            shad__writer_print(&writer, "        %s,   /* format */\n", shad_to_sdl_texture_format_string[out->format]);
+            shad__writer_print(&writer, "        {\n");
+            shad__writer_print(&writer, "            %s,   /* src_color_blendfactor */\n", shad_to_sdl_blend_factor_string[out->blend_src]);
+            shad__writer_print(&writer, "            %s,   /* dst_color_blendfactor */\n", shad_to_sdl_blend_factor_string[out->blend_dst]);
+            shad__writer_print(&writer, "            %s,   /* color_blend_op */\n", shad_to_sdl_blend_op_string[out->blend_op]);
+            shad__writer_print(&writer, "            %s,   /* src_alpha_blendfactor */\n", shad_to_sdl_blend_factor_string[out->blend_src]);
+            shad__writer_print(&writer, "            %s,   /* dst_alpha_blendfactor */\n", shad_to_sdl_blend_factor_string[out->blend_dst]);
+            shad__writer_print(&writer, "            %s,   /* alpha_blend_op */\n", shad_to_sdl_blend_op_string[out->blend_op]);
+            shad__writer_print(&writer, "            (SDL_GPUColorComponentFlags)0,   /* color_write_mask */\n");
+            shad__writer_print(&writer, "            (bool)%i,   /* enable_blend */\n", (int)out->blend_op != SHAD_BLEND_OP_INVALID);
+            shad__writer_print(&writer, "            (bool)0,   /* enable_color_write_mask */\n");
+            shad__writer_print(&writer, "            (Uint8)0,   /* padding1 */\n");
+            shad__writer_print(&writer, "            (Uint8)0,   /* padding2 */\n");
+            shad__writer_print(&writer, "        },\n");
+            shad__writer_print(&writer, "    },\n");
+        }
+        shad__writer_print(&writer, "};\n");
+    } else {
+        shad__writer_print(&writer, "static const SDL_GPUColorTargetDescription shad__color_target_descriptions_info_%s[1] = {0};\n", name);
+    }
+
+    /* pipeline*/
+    shad__writer_print(&writer, "static const SDL_GPUGraphicsPipelineCreateInfo shad_sdl_pipeline_%s = {\n", name);
+    shad__writer_print(&writer, "    NULL,   /* vertex_shader */\n");
+    shad__writer_print(&writer, "    NULL,   /* fragment_shader */\n");
+    /* vertex input state */
+    shad__writer_print(&writer, "    {\n");
+    shad__writer_print(&writer, "        shad__vertex_buffer_descriptions_info_%s,   /* vertex_buffer_descriptions */\n", name);
+    shad__writer_print(&writer, "        (Uint32)%i,                          /* num_vertex_buffers */\n", (int)sc->num_vertex_input_buffers);
+    shad__writer_print(&writer, "        shad__vertex_attributes_info_%s,   /* vertex_attributes */\n", name);
+    shad__writer_print(&writer, "        (Uint32)%i,                          /* num_vertex_attributes */\n", (int)sc->num_vertex_inputs);
+    shad__writer_print(&writer, "    },\n");
+    /* primitive type */
+    shad__writer_print(&writer, "    %s, /* primitive_type */\n", shad_to_sdl_primitive_string[sc->primitive]);
+    /* rasterizer state */
+    shad__writer_print(&writer, "    {\n");
+    shad__writer_print(&writer, "        SDL_GPU_FILLMODE_FILL,   /* fill_mode */\n");
+    shad__writer_print(&writer, "        %s,   /* cull_mode */\n", shad_to_sdl_cull_mode_string[sc->cull_mode]);
+    shad__writer_print(&writer, "        SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,   /* front_face */\n");
+    shad__writer_print(&writer, "        0.f,   /* depth_bias_constant_factor */\n");
+    shad__writer_print(&writer, "        0.f,   /* depth_bias_clamp */\n");
+    shad__writer_print(&writer, "        0.f,   /* depth_bias_slope_factor */\n");
+    shad__writer_print(&writer, "        (bool)0,   /* enable_depth_bias */\n");
+    shad__writer_print(&writer, "        (bool)%i,   /* enable_depth_clip */\n", (int)sc->depth_clip);
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding1 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding2 */\n");
+    shad__writer_print(&writer, "    },\n");
+    /* multisample state */
+    shad__writer_print(&writer, "    {\n");
+    shad__writer_print(&writer, "        %s,   /* sample_count */\n", shad_to_sdl_sample_count_string[sc->multisample_count]);
+    shad__writer_print(&writer, "        (Uint32)0,   /* sample_mask */\n");
+    shad__writer_print(&writer, "        (bool)0,   /* enable_mask */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding1 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding2 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding3 */\n");
+    shad__writer_print(&writer, "    },\n");
+    /* depth stencil state */
+    shad__writer_print(&writer, "    {\n");
+    shad__writer_print(&writer, "        %s,   /* compare_op */\n", shad_to_sdl_compare_op_string[sc->depth_cmp]);
+    shad__writer_print(&writer, "        {0}, /* back stencil state */\n");
+    shad__writer_print(&writer, "        {0}, /* front stencil state */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* compare_mask */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* write_mask */\n");
+    shad__writer_print(&writer, "        (bool)%i,   /* enable_depth_test */\n", (int)sc->depth_cmp != SHAD_COMPARE_OP_INVALID);
+    shad__writer_print(&writer, "        (bool)%i,   /* enable_depth_write */\n", (int)sc->depth_write);
+    shad__writer_print(&writer, "        (bool)0,   /* enable_stencil_test */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding1 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding2 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding3 */\n");
+    shad__writer_print(&writer, "    },\n");
+    /* target info */
+    shad__writer_print(&writer, "    {\n");
+    shad__writer_print(&writer, "        shad__color_target_descriptions_info_%s,   /* color_target_descriptions */\n", name);
+    shad__writer_print(&writer, "        (Uint32)%i,   /* num_color_targets */\n", (int)sc->num_fragment_outputs);
+    shad__writer_print(&writer, "        %s,   /* depth_stencil_format */\n", shad_to_sdl_texture_format_string[sc->depth_format]);
+    shad__writer_print(&writer, "        (bool)%i,   /* has_depth_stencil_target */\n", (int)sc->depth_format != SHAD_TEXTURE_FORMAT_INVALID);
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding1 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding2 */\n");
+    shad__writer_print(&writer, "        (Uint8)0,   /* padding3 */\n");
+    shad__writer_print(&writer, "    },\n");
+    /* pipeline end */
+    shad__writer_print(&writer, "};\n");
+
+    /* output result */
+    *code_out = writer.buf;
+    *code_len_out = writer.len;
+}
+
