@@ -35,15 +35,14 @@
 @end
 ```
 
-## Compile shader using CLI
+## Compile shader
 
+Using CLI (find it under [Releases](https://github.com/cribalik/cm_shader/releases))
 ```bash
 shad sdl3 triangle.shader > my_shaders.h
 ```
 
-You can find the CLI under [Releases](https://github.com/cribalik/cm_shader/releases)
-
-## Compile shader using C library
+Using C library
 
 ```c++
 #include "shad.h"
