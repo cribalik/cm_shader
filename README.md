@@ -211,36 +211,32 @@ Fragment input automatically becomes the vertex output, no need to specify it.
 Fragment output optionally allows you to specify an output format, but sometimes you don't know it ahead of time (like when rendering to the window), in which case you must specify it yourself when creating your pipeline - cm_shader will not specify that for you.
 
 The allowed formats are:
-- r8
-- rg8
-- rgba8
-- r16
-- rg16
-- rgba16
-- r16f
-- rg16f
-- rgba16f
-- r32f
-- rg32f
-- rgba32f
-- r11g11b10f
+```
+r8 rg8 rgba8 r16 rg16 rgba16 r16f rg16f rgba16f r32f rg32f rgba32f r11g11b10f
+```
 
 ### Samplers, Textures, Buffers, Uniforms
 
-Samplers, (storage) textures, (storage) buffers, and uniforms are specified with `@sampler`, `@texture`, `@buffer`, `@uniform`.
+Samplers, storage textures, storage buffers, and uniforms are specified with `@sampler`, `@image`, `@buffer`, `@uniform`.
 
 #### Example
 
 ```glsl
 @sampler sampler2D mysampler;
-@texture(format=rgba8) mytexture;
+@image(format=rgba8) image2D myimage;
 @buffer {int my_storage_buffer_int;};
 @uniform {int my_uniform_int;};
 ```
 
-The texture format must be specified (as in regular GLSL). You can find the supported formats [here](https://www.khronos.org/opengl/wiki/Image_Load_Store).
+The image is mandatory (as in regular GLSL). You can find the supported formats [here](https://www.khronos.org/opengl/wiki/Image_Load_Store).
 
-The slots for these are allocated in-order. For example:
+You can specify `readonly` or `writeonly` for `@buffer` and `@image` like so:
+```glsl
+@image(format=rgba8) readonly image2D myimage;
+@buffer writeonly image2D myimage;
+```
+
+The slots for each type is allocated in-order. For example:
 
 ```glsl
 @vert
@@ -267,20 +263,14 @@ The slots for these are allocated in-order. For example:
 ```
 
 where `<op>` is one of
-- never
-- less
-- equal
-- less_or_equal
-- greater
-- not_equal
-- greater_or_equal
-- always
+```
+never less equal less_or_equal greater not_equal greater_or_equal always
+```
+
 and `<format>` is one of
-- d16
-- d24
-- d32f
-- d24_s8
-- d32f_s8
+```
+d16 d24 d32f d24_s8 d32f_s8
+```
 
 Depth must be specified at the top of the file before the vertex shader
 
@@ -307,26 +297,15 @@ Culling must be specified at the top of the file before the vertex shader
 ```
 
 where `<src_blend_factor>` and `<dst_blend_factor>` is one of
-- zero
-- one
-- src_color
-- one_minus_src_color
-- dst_color
-- one_minus_dst_color
-- src_alpha
-- one_minus_src_alpha
-- dst_alpha
-- one_minus_dst_alpha
-- constant_color
-- one_minus_constant_color
-- src_alpha_saturate
+```
+zero one src_color one_minus_src_color dst_color one_minus_dst_color src_alpha one_minus_src_alpha dst_alpha one_minus_dst_alpha constant_color one_minus_constant_color src_alpha_saturate
+```
 
 and `<op>` is one of
-- add
-- subtract
-- rev_subtract
-- min
-- max
+
+```
+add subtract rev_subtract min max
+```
 
 To specify different `@blend` settings for different fragment outputs, you can just re-specify the blend before the output declaration like so:
 
