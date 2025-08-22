@@ -10,8 +10,8 @@
     @in(buffer=0, type=u8) vec4 v2;
 
     @sampler sampler2D s1;
-    @buffer {int b1;};
-    @image(format=rgba8) t1;
+    @buffer writeonly {int b1;};
+    @image(format=rgba8) readonly t1;
     @uniform {int u1;};
 
     void main() {gl_Position = vec4(0,0,0,1);}

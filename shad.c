@@ -674,12 +674,12 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
     typedef struct ShadAstVertOut   {ShadAst base;} ShadAstVertOut;
     typedef struct ShadAstVertSampler   {ShadAst base;} ShadAstVertSampler;
     typedef struct ShadAstVertBuffer    {ShadAst base; ShadBool readonly; ShadBool writeonly;} ShadAstVertBuffer;
-    typedef struct ShadAstVertTexture     {ShadAst base; char *format;} ShadAstVertTexture;
+    typedef struct ShadAstVertTexture     {ShadAst base; char *format; ShadBool readonly; ShadBool writeonly;} ShadAstVertTexture;
     typedef struct ShadAstVertUniform   {ShadAst base;} ShadAstVertUniform;
     typedef struct ShadAstFragOut   {ShadAst base; ShadFragmentOutput out;} ShadAstFragOut;
     typedef struct ShadAstFragSampler   {ShadAst base;} ShadAstFragSampler;
     typedef struct ShadAstFragBuffer    {ShadAst base; ShadBool readonly; ShadBool writeonly;} ShadAstFragBuffer;
-    typedef struct ShadAstFragTexture     {ShadAst base; char *format;} ShadAstFragTexture;
+    typedef struct ShadAstFragTexture     {ShadAst base; char *format; ShadBool readonly; ShadBool writeonly;} ShadAstFragTexture;
     typedef struct ShadAstFragUniform   {ShadAst base;} ShadAstFragUniform;
 
     ShadArena tmp;
@@ -953,7 +953,9 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
             else if (shad__match_identifier(&p, "@image")) {
                 char *format = shad__consume_texture(&p);
                 if (!format) SHAD_PARSE_ERROR("You must specify the texture format.\nExample:\n@image(format=rgba8) mytexture;\n\nValid formats are: %s", shad__texture_format_options);
-                SHAD_AST_PUSH(ShadAstVertTexture, format);
+                ShadBool readonly = shad__match_identifier(&p, "readonly");
+                ShadBool writeonly = shad__match_identifier(&p, "writeonly");
+                SHAD_AST_PUSH(ShadAstVertTexture, format, readonly, writeonly);
             }
             else if (shad__match_identifier(&p, "@buffer")) {
                 ShadBool readonly = shad__match_identifier(&p, "readonly");
@@ -1012,7 +1014,9 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
             else if (shad__match_identifier(&p, "@image")) {
                 char *format = shad__consume_texture(&p);
                 if (!format) SHAD_PARSE_ERROR("You must specify the texture format.\nExample:\n@image(format=rgba8) mytexture;\n\nValid formats are: %s", shad__texture_format_options);
-                SHAD_AST_PUSH(ShadAstFragTexture, format);
+                ShadBool readonly = shad__match_identifier(&p, "readonly");
+                ShadBool writeonly = shad__match_identifier(&p, "writeonly");
+                SHAD_AST_PUSH(ShadAstFragTexture, format, readonly, writeonly);
             }
             else if (shad__match_identifier(&p, "@buffer")) {
                 ShadBool readonly = shad__match_identifier(&p, "readonly");
@@ -1147,12 +1151,12 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
                     case ShadAstVertSamplerType: shad__writer_print(&vertex_output, "layout(set = 0, binding = %i) uniform", vertex_sampler_index), ++vertex_sampler_index; break;
                     case ShadAstVertTextureType: {
                         ShadAstVertTexture *tex = (ShadAstVertTexture*)ast;
-                        shad__writer_print(&vertex_output, "layout(set = 0, binding = %i, %s) uniform image2D", vertex_image_index, tex->format), ++vertex_image_index; break;
+                        shad__writer_print(&vertex_output, "layout(set = 0, binding = %i, %s) uniform%s image2D", vertex_image_index, tex->format, tex->readonly ? " readonly" : tex->writeonly ? " writeonly" : ""), ++vertex_image_index; break;
                         break;
                     }
                     case ShadAstVertBufferType: {
                         ShadAstVertBuffer *buf = (ShadAstVertBuffer*)ast;
-                        shad__writer_print(&vertex_output, "layout(std140, set = 0, binding = %i) buffer%s Buffer%i", vertex_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? "writeonly" : "", vertex_buffer_index);
+                        shad__writer_print(&vertex_output, "layout(std140, set = 0, binding = %i) buffer%s Buffer%i", vertex_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? " writeonly" : "", vertex_buffer_index);
                         ++vertex_buffer_index;
                         break;
                     }
@@ -1161,12 +1165,12 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
                     case ShadAstFragSamplerType: shad__writer_print(&fragment_output, "layout(set = 2, binding = %i) uniform", fragment_sampler_index), ++fragment_sampler_index; break;
                     case ShadAstFragTextureType: {
                         ShadAstFragTexture *tex = (ShadAstFragTexture*)ast;
-                        shad__writer_print(&fragment_output, "layout(set = 2, binding = %i, %s) uniform image2D", fragment_image_index, tex->format), ++fragment_image_index; break;
+                        shad__writer_print(&fragment_output, "layout(set = 2, binding = %i, %s) uniform%s image2D", fragment_image_index, tex->format, tex->readonly ? " readonly" : tex->writeonly ? " writeonly" : ""), ++fragment_image_index; break;
                         break;
                     }
                     case ShadAstFragBufferType: {
                         ShadAstFragBuffer *buf = (ShadAstFragBuffer*)ast;
-                        shad__writer_print(&fragment_output, "layout(std140, set = 2, binding = %i) buffer%s Buffer%i", fragment_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? "writeonly" : "", fragment_buffer_index);
+                        shad__writer_print(&fragment_output, "layout(std140, set = 2, binding = %i) buffer%s Buffer%i", fragment_buffer_index, buf->readonly ? " readonly" : buf->writeonly ? " writeonly" : "", fragment_buffer_index);
                         ++fragment_buffer_index;
                         break;
                     }
