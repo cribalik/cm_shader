@@ -1,4 +1,3 @@
-#define SHAD_COMPILER
 #include "../shad.h"
 #include "../shad.c"
 

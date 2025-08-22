@@ -178,8 +178,6 @@ void shad_compilation_free(ShadCompilation *r) {
 
 ******/
 
-#ifdef SHAD_COMPILER
-
 /* we use glslang to cross-compile from GLSL to SPIRV */
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
@@ -1210,8 +1208,6 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
     #undef SHAD_ERROR
     #undef SHAD_PARSE_ERROR
 }
-
-#endif /* SHAD_COMPILER */
 
 ShadArena* shad__compilation_arena_get(ShadCompilation *compiled) {
     if (!compiled->arena) {

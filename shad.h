@@ -19,7 +19,6 @@ See README.md for full documentation, but here's a quick overview:
 
     shad_compile()
         Compile a shader. free with shad_compilation_free()
-        This requires linking with Vulkan (glslang specifically), so you have to enable it by defining SHAD_COMPILER
 
     shad_compilation_serialize()
         Serialize a compilation. data is freed when you call shad_compilation_free()
@@ -280,9 +279,7 @@ typedef struct ShadCompilation {
     void *arena;
 } ShadCompilation;
 
-#ifdef SHAD_COMPILER
 ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadCompilation *result);
-#endif /* SHAD_COMPILER */
 void     shad_compilation_serialize(ShadCompilation *compilation, char **bytes_out, int *num_bytes_out);
 ShadBool shad_compilation_deserialize(char *bytes, int num_bytes, ShadCompilation *result);
 void     shad_compilation_free(ShadCompilation*);

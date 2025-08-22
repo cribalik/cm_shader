@@ -1,6 +1,4 @@
 #include <SDL3/SDL.h>
-#define SHAD_COMPILER
-#define SHAD_RUNTIME
 #include "shad.h"
 #include "shad.c"
 #include <assert.h>

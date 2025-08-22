@@ -1,10 +1,6 @@
 #include <SDL3/SDL.h>
-
-/* required to include shad_compile() */
-#define SHAD_COMPILER
-/* required to include shad_sdl_prefill*() functions */
-#define SHAD_RUNTIME
 #include "shad.h"
+#include "shad.c"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -12,6 +8,31 @@ int main(int argc, char const *argv[]) {
     /* compile shader */
     ShadCompilation sc;
     shad_compile("triangle.shader", SHAD_OUTPUT_FORMAT_SDL, &sc);
+
+    /* in your engine, you might want to only recompile the shader when the original shader file changes */
+    /* you can use the serialization API to store the result and read it back later */
+    {
+        /* serialize */
+        char *bytes;
+        int bytes_len;
+        shad_compilation_serialize(&sc, &bytes, &bytes_len);
+
+        /* write to disk */
+        FILE *f = fopen("shader.bin", "wb");
+        fwrite(bytes, 1, bytes_len, f);
+        fclose(f);
+
+        /* free the old compilation result */
+        shad_compilation_free(&sc);
+
+        /* read from disk */
+        f = fopen("shader.bin", "rb");
+        fread(bytes, 1, bytes_len, f);
+        fclose(f);
+
+        /* deserialize */
+        shad_compilation_deserialize(bytes, bytes_len, &sc);
+    }
 
     /* SDL initialization */
     SDL_Init(SDL_INIT_VIDEO);
@@ -80,5 +101,3 @@ int main(int argc, char const *argv[]) {
 
     return 0;
 }
-
-#include "shad.c"

@@ -9,7 +9,9 @@
 # Example
 
 ## Shader code
+
 ```glsl
+// triangle.shader
 @blend src_alpha one_minus_src_alpha add
 @cull front
 
@@ -33,22 +35,17 @@
 @end
 ```
 
-## Compiling the shader
-
-You can either compile using the C interface, or using the CLI.
-
-### Compilation using CLI
+## Compile shader using CLI
 
 ```bash
-shad sdl3 triangle.shader -o my_shaders.h
+shad sdl3 triangle.shader > my_shaders.h
 ```
 
 You can find the CLI under [Releases](https://github.com/cribalik/cm_shader/releases)
 
-### Compilation using C library
+## Compile shader using C library
 
 ```c++
-#define SHAD_COMPILER
 #include "shad.h"
 #include "shad.c"
 
@@ -65,20 +62,24 @@ void compile() {
 }
 ```
 
-## Using the compilation result to create SDL Shaders & Pipelines
+## Use the compilation result to create SDL Shaders & Pipelines
 
 ```c++
 #include "my_shaders.h"
 
 void func() {
     /* shader creation */
-    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, &shad_sdl_vertex_shader_triangle);
-    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, &shad_sdl_fragment_shader_triangle);
+    SDL_GPUShaderCreateInfo vsinfo = shad_sdl_vertex_shader_triangle;
+    SDL_GPUShaderCreateInfo fsinfo = shad_sdl_fragment_shader_triangle;
+    /* your own settings here... */
+    SDL_GPUShader *vshader = SDL_CreateGPUShader(device, vsinfo);
+    SDL_GPUShader *fshader = SDL_CreateGPUShader(device, fsinfo);
 
     /* pipeline creation */
     SDL_GPUGraphicsPipelineCreateInfo pinfo = shad_sdl_pipeline_triangle;
     pinfo.vertex_shader = vshader;
     pinfo.fragment_shader = fshader;
+    /* your own settings here... */
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(device, &pinfo);
 }
 ```
@@ -99,21 +100,26 @@ TODO:
 
 # Build
 
-Just include `shad.h` and `shad.c` into your source. 
-`shad.c` is written in a single-header-library style, so you should be able to safely include it into your own C/C++ file without fear of name collisions.
+```cpp
+#include "shad.h"
+#include "shad.c"
+```
 
-To use `shad_compile()`, you must define `SHAD_COMPILER` and link to the vulkan libraries (they are automatically linked using #pragma on windows)
-To use `shad_sdl_fill_*()` functions, you must include `SDL.h` before including `shad.h`. cm_shader doesn't call any SDL functions, it only needs the headers
+`shad.h/c` are written in a single-header-library style, so you should be able to safely include it into your own C/C++ file without fear of name collisions.
 
-# Documentation
+To use `shad_sdl_fill_*()` functions, you must include `SDL.h` before including `shad.h`. cm_shader doesn't call any SDL functions, it only needs the headers.
+
+# C API Documentation
+
+**NOTE:** Prefer using the cli instead if you can, you won't have to use `shad.h/c` at all!
 
 ## Compilation API (`shad_compile*()` functions)
 
-Use this API to compile shaders and serialize/deserialize the result. Usually done as a build step or at runtime.
+Use this API to compile shaders and serialize/deserialize the result. Handy if you have an engine that compiles shaders at runtime and caches the builds.
 
 `shad_compile()`
 Compile a shader. free with shad_compilation_free()
-This requires linking with Vulkan (glslang specifically), so you have to enable it by defining SHAD_COMPILER
+This requires linking with Vulkan (glslang specifically)
 
 `shad_compilation_serialize()`
 Serialize a compilation. data is freed when you call shad_compilation_free()
@@ -167,6 +173,8 @@ NOTE: These functions will memzero the structs, so if you want to override some 
 @in(type=u8)  vec4 in_color;      /* component type will be unsigned byte, so color is char[4] */
 @in(buffer=1) vec2 in_uv;        /* buffer slot = 1 */
 @in(buffer=2, instanced) vec3 in_transform;
+@out vec4 vertex_color;
+@out vec2 vertex_uv;
 ```
 
 #### Specification
@@ -187,7 +195,9 @@ NOTE: These functions will memzero the structs, so if you want to override some 
 - `instanced`
   This indicates that the buffer corresponding to this vertex input should stride forward per instance as opposed to per vertex. As instancing is on a buffer level, not vertex input level, all vertex inputs bound to this buffer need to specify it as instanced.
 
-### Fragment input/output
+`@out` doesn't have any parameters. Vertex output automatically gets added to fragment input.
+
+### Fragment output
 
 #### Example
 
