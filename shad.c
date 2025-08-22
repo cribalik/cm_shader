@@ -851,7 +851,8 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
 
         case VERT:
             if (shad__match_identifier(&p, "@in")) {
-                ShadVertexInput attr = {0};
+                ShadVertexInput attr;
+                memset(&attr, 0, sizeof(attr));
                 attr.code_location.path = p.file->path;
                 attr.code_location.pos = p.s;
                 attr.code_location.start = p.data;
@@ -988,7 +989,8 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
 
         case FRAG:
             if (shad__match_identifier(&p, "@out")) {
-                ShadFragmentOutput output = {0};
+                ShadFragmentOutput output;
+                memset(&output, 0, sizeof(output));
                 output.code_location.path = p.file->path;
                 output.code_location.pos = p.s;
                 output.code_location.start = p.data;
@@ -1215,7 +1217,8 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
 
 ShadArena* shad__compilation_arena_get(ShadCompilation *compiled) {
     if (!compiled->arena) {
-        ShadArena arena = {0};
+        ShadArena arena;
+        memset(&arena, 0, sizeof(arena));
         compiled->arena = SHAD_ALLOC(ShadArena, &arena, 1);
         memcpy(compiled->arena, &arena, sizeof(arena));
     }
@@ -1302,10 +1305,11 @@ void shad_compilation_serialize(ShadCompilation *compiled, char **bytes_out, int
 }
 
 ShadBool shad_compilation_deserialize(char *bytes, int num_bytes, ShadCompilation *compiled) {
-    ShadArena arena = {0};
+    ShadArena arena;
     int num_bytes_remaining = num_bytes;
     int i;
 
+    memset(&arena, 0, sizeof(arena));
     memset(compiled, 0, sizeof(*compiled));
 
     #define SHAD_READ_N(ptr, size) do { \
@@ -1763,7 +1767,7 @@ void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_
         shad__serialize_spirv_to_code(&writer, (char*)sc->spirv_fragment_code, (int)sc->spirv_fragment_code_size);
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "static const unsigned shad__spirv_fragment_code_%s[1] = {0}", name);
+        shad__writer_print(&writer, "static const unsigned shad__spirv_fragment_code_%s[1];\n", name);
     }
 
     /* vertex shader */
@@ -1795,7 +1799,7 @@ void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_
         shad__writer_print(&writer, "    0,                  /* props */\n");
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "static const SDL_GPUShaderCreateInfo shad_sdl_fragment_shader_%s = {0};\n", name);
+        shad__writer_print(&writer, "static const SDL_GPUShaderCreateInfo shad_sdl_fragment_shader_%s;\n", name);
     }
 
     /* vertex inputs */
@@ -1817,7 +1821,7 @@ void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_
         }
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "static const SDL_GPUVertexAttribute shad__vertex_attributes_info_%s[1] = {0};\n", name);
+        shad__writer_print(&writer, "static const SDL_GPUVertexAttribute shad__vertex_attributes_info_%s[1];\n", name);
     }
 
     /* vertex input buffers */
@@ -1838,7 +1842,7 @@ void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_
         }
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "static const SDL_GPUVertexBufferDescription shad__vertex_buffer_descriptions_info_%s[1] = {0};\n", name);
+        shad__writer_print(&writer, "static const SDL_GPUVertexBufferDescription shad__vertex_buffer_descriptions_info_%s[1];\n", name);
     }
 
     /* color target descriptions */
@@ -1865,7 +1869,7 @@ void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_
         }
         shad__writer_print(&writer, "};\n");
     } else {
-        shad__writer_print(&writer, "static const SDL_GPUColorTargetDescription shad__color_target_descriptions_info_%s[1] = {0};\n", name);
+        shad__writer_print(&writer, "static const SDL_GPUColorTargetDescription shad__color_target_descriptions_info_%s[1];\n", name);
     }
 
     /* pipeline*/
