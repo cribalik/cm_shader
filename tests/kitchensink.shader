@@ -11,7 +11,7 @@
 
     @sampler sampler2D s1;
     @buffer writeonly {int b1;};
-    @image(format=rgba8) readonly t1;
+    @image(format=rgba8) readonly image2D t1;
     @uniform {int u1;};
 
     void main() {gl_Position = vec4(0,0,0,1);}
@@ -31,7 +31,7 @@
 
     @sampler sampler2D s2;
     @buffer {int b2;};
-    @image(format=r16_snorm) t2;
+    @image(format=r16_snorm) image2D t2;
     @uniform {int u2;};
 
     void main() {}

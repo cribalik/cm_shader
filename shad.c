@@ -1151,7 +1151,7 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
                     case ShadAstVertSamplerType: shad__writer_print(&vertex_output, "layout(set = 0, binding = %i) uniform", vertex_sampler_index), ++vertex_sampler_index; break;
                     case ShadAstVertTextureType: {
                         ShadAstVertTexture *tex = (ShadAstVertTexture*)ast;
-                        shad__writer_print(&vertex_output, "layout(set = 0, binding = %i, %s) uniform%s image2D", vertex_image_index, tex->format, tex->readonly ? " readonly" : tex->writeonly ? " writeonly" : ""), ++vertex_image_index; break;
+                        shad__writer_print(&vertex_output, "layout(set = 0, binding = %i, %s) uniform%s", vertex_image_index, tex->format, tex->readonly ? " readonly" : tex->writeonly ? " writeonly" : ""), ++vertex_image_index; break;
                         break;
                     }
                     case ShadAstVertBufferType: {
@@ -1165,7 +1165,7 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
                     case ShadAstFragSamplerType: shad__writer_print(&fragment_output, "layout(set = 2, binding = %i) uniform", fragment_sampler_index), ++fragment_sampler_index; break;
                     case ShadAstFragTextureType: {
                         ShadAstFragTexture *tex = (ShadAstFragTexture*)ast;
-                        shad__writer_print(&fragment_output, "layout(set = 2, binding = %i, %s) uniform%s image2D", fragment_image_index, tex->format, tex->readonly ? " readonly" : tex->writeonly ? " writeonly" : ""), ++fragment_image_index; break;
+                        shad__writer_print(&fragment_output, "layout(set = 2, binding = %i, %s) uniform%s", fragment_image_index, tex->format, tex->readonly ? " readonly" : tex->writeonly ? " writeonly" : ""), ++fragment_image_index; break;
                         break;
                     }
                     case ShadAstFragBufferType: {
