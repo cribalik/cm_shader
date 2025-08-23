@@ -86,6 +86,10 @@ int shad__vsnprintf(char *buffer, int size, const char *fmt, va_list args) {
         if (*fmt == 'S') {++fmt; s = va_arg(args, char*); n = (int)(va_arg(args, char*) - s); goto add_ns;}
         if (*fmt == 'i') {++fmt; i = va_arg(args, int); goto add_i;}
         if (*fmt == 'x') {++fmt; u = va_arg(args, unsigned); goto add_x;}
+        buf[0] = '%';
+        s = buf;
+        n = 1;
+        goto add_ns;
 
         add_i:
             s = buf + sizeof(buf);
@@ -118,7 +122,7 @@ int shad__vsnprintf(char *buffer, int size, const char *fmt, va_list args) {
 
     if (out < out_end) *out = 0;
 
-    return out - buffer;
+    return (int)(out - buffer);
 }
 
 int shad__snprintf(char *buffer, int size, const char *fmt, ...) {
@@ -246,7 +250,7 @@ char* shad__strcpy(ShadArena *arena, char *start, char *end) {
     int len;
     char *result;
 
-    len = end - start;
+    len = (int)(end - start);
     result = SHAD_ALLOC(char, arena, len+1);
     memcpy(result, start, len);
     result[len] = 0;
@@ -269,7 +273,7 @@ char* shad__strcat(ShadArena *arena, ...) {
         a = va_arg(args, char*);
         if (!a) break;
         b = va_arg(args, char*);
-        len += b-a;
+        len += (int)(b-a);
     }
     va_end(args);
 
@@ -1181,7 +1185,7 @@ ShadBool shad_compile(const char *path, ShadOutputFormat output_format, ShadComp
             }
             break;
         }
-        default: return fprintf(stderr, "Invalid output format"), 0;
+        default: return fprintf(stderr, "Invalid output format\n"), 0;
     }
 
     /* convert output code to SPIRV */
