@@ -16,7 +16,7 @@
     #define SHAD_ALLOCA(type, count) ((type*)memset(_alloca(sizeof(type) * (count)), 0, sizeof(type) * (count)))
     #define SHAD_ALIGNOF(type) __alignof(type)
 #else
-    #define SHAD_ALLOCA(type, size) ((type*)memset(alloca(sizeof(type) * (count)), 0, sizeof(type) * (count)))
+    #define SHAD_ALLOCA(type, count) ((type*)memset(alloca(sizeof(type) * (count)), 0, sizeof(type) * (count)))
     #define SHAD_ALIGNOF(type) __alignof__(type)
 #endif
 
@@ -1942,4 +1942,5 @@ void shad_sdl_serialize_to_c(ShadCompilation *sc, const char *name, char **code_
     *code_out = writer.buf;
     *code_len_out = writer.len;
 }
+
 
